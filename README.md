@@ -1,28 +1,32 @@
-# AABB Automata
+# AoE Clone
 
-Simulador de combate aereo 2D autónomo. Aviones con IA que pelean entre sí.
+Clon de Age of Empires: un wrapper de RTS genérico, construido como motor de estrategia en tiempo real **sin hardcodear mecánicas ni variables de juego**.
 
 ## Concepto
 
-Cada avión es un agente autónomo que opera con:
+En lugar de fijar reglas en el código (costos, vida, producción, atributos...), el motor expone un conjunto de primitivas configurables en tiempo de ejecución:
 
-- **Sensores**: raycasts que detectan enemigos, misiles y el limite del mapa
-- **Armamento**: missiles balísticos con追踪
-- **Propulsión**: movimiento con aceleracion y rotacion
-- **Vida**: barra de vida, muere al recibir suficiente daño
+- **Entidades**: unidades y edificios definidos por datos (JSON/schema), no por clases hardcodeadas
+- **Mecánicas**: selección, movimiento, recolección, combate, construcción, producción — implementadas como sistemas desacoplados
+- **Configuración**: balance (costos, tiempos, daño, HP) declarativo y editable sin tocar el código
+- **Wrapper de RTS**: arquitectura reutilizable para cualquier RTS, no solo este clon
 
-Los aviones usan **AABB** (Axis-Aligned Bounding Box) para detección de colisiones.
+El objetivo es que cambiar cualquier variable de juego (¿cuánta vida tiene un aldeano? ¿cuánto cuesta un caballero?) sea solo editar datos, nunca reescribir lógica.
+
+## Estado actual
+
+Boceto inicial: ventana de pygame con cielo, terreno y HUD. Sin mecánicas todavía.
 
 ## Controles
 
 - `ESPACIO`: pausar/reanudar
 - `ESC`: salir
-- `R`: reiniciar batalla
+- `R`: reiniciar
 
 ## Ejecución
 
 ```bash
-pip install pygame-ce
+pip install -r requirements.txt
 python main.py
 ```
 
