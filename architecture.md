@@ -1451,3 +1451,28 @@ Son dos mecanismos distintos que se suelen confundir:
 ### 11.9 Capabilities en la Fase 3
 
 Hasta la Fase 6 las capabilities son un conjunto **fijo por ficha** (`"capabilities": ["move", "gather", "build"]`) y cada una tiene su `IActionBehavior`. El panel de órdenes se genera a partir de ellas y de las listas de la ficha (`builds`, `trains`), así que una unidad nueva con `"capabilities": ["move", "build"]` y `"builds": ["house"]` aparece en el juego con su botón de construir sin tocar código. La Fase 6 solo añade que esas capabilities cambien en partida (`ObjectModifier`).
+
+### 11.10 Fauna, granjas, agua y órdenes en cola
+
+**Granjas.** Un edificio con `"walkable": true` ocupa el suelo para construir (no se puede edificar encima) pero no bloquea el paso (`TileMap::add_blocker(..., blocks_movement = false)`). Es a la vez recurso (`resource`) con `gather_slots: 1`: un solo granjero, que entra al campo y trabaja una casilla al azar (con el `Rng` de la simulación); tras unos cuantos recursos pasa a otra, hasta llenar la carga. Solo la trabaja su dueño.
+
+**Plazas de recolección.** Cada recurso declara `gather_slots` (árbol 2, mina 4, bayas 3, carne 6...). Al principio de cada tick se cuenta quién está recolectando qué; si un recurso está lleno, el aldeano que llega busca otro cercano del mismo tipo y, si no hay, espera su turno.
+
+**Animales** (`"animal"` en la ficha):
+
+| Comportamiento | Ejemplo | Qué hace |
+|---|---|---|
+| `domestic` | Cabra | Pasa al primer jugador que tiene unidades cerca (y cambia si su dueño se aleja y llega otro). Se puede mover y sacrificar. No cuenta para la derrota. |
+| `flee` | Ciervo | Huye de las tropas y, a ráfagas de 2 s, de quien le acaba de golpear: un aldeano lo alcanza entre ráfaga y ráfaga. |
+| `aggressive` | Lobo | Ataca a cualquier unidad que vea (sin niebla: los animales "ven" su entorno). Las tropas lo atacan solas. No da comida. |
+| `retaliate` | Jabalí | Neutral; si lo hieren, se revuelve contra el atacante. |
+
+`carcass_food` > 0 hace que al morir aparezca una entidad `carcass` (recurso transitable) con esa comida. Cazar = una orden `Gather` sobre el animal: `GatherAction` pasa por la fase `Hunting` (lleva dentro un `AttackAction`) y, cuando el animal cae, recolecta la carne.
+
+**Agua.** `MoveLayer` (tierra/agua) para moverse y `Placement` (tierra/agua/orilla) para colocar. Peces de orilla (`placement: shore`): los aldeanos pescan desde tierra. Bancos profundos (`placement: water`): solo las unidades `naval` (barca de pesca), que descargan en edificios del agua (muelle, `placement: shore`).
+
+**Pathfinding con niebla.** `PathQuery` lleva la capa y la niebla del dueño: lo no explorado se supone transitable. Cada medio segundo la unidad comprueba el tramo siguiente con lo que ya ha descubierto y, si ahora ve un obstáculo, replanifica. Gaia (animales) conoce el terreno.
+
+**Órdenes en cola (Shift).** Cada entidad tiene `orders` (cola FIFO de `Order`). Un `Command` con `queued = true` se añade a la cola en vez de sustituir la orden actual; al terminar una acción, `action_system` convierte la siguiente orden en acción (las que ya no son válidas, p. ej. un objetivo muerto, se descartan). Con Shift, los cimientos se colocan en el acto y la obra se encola.
+
+**Iniciativa.** Al terminar un depósito (aserradero, campamento minero, molino) el constructor se pone a recolectar el recurso que acepta más cercano y libre; al terminar una granja, la trabaja. Solo si no tiene más órdenes en cola.

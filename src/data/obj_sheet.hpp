@@ -16,7 +16,19 @@ namespace data {
 enum class EntityKind : uint8_t { Unit, Building, Resource, Projectile };
 
 // Cómo se dibuja mientras no haya sprites: una figura con etiqueta.
-enum class ShapeKind : uint8_t { Unit, Cavalry, Building, Tree, Mine, Bush, Arrow };
+enum class ShapeKind : uint8_t { Unit, Cavalry, Building, Tree, Mine, Bush, Arrow, Animal, Carcass, Fish, Boat, Field };
+
+// Dónde se coloca: tierra, agua (peces) o agua tocando tierra (muelle)
+enum class PlacementRule : uint8_t { Land, Water, Shore };
+
+// Comportamiento de los animales de Gaia
+enum class AnimalBehavior : uint8_t {
+    None,
+    Domestic,    // se convierte al primer jugador que se acerca; se puede llevar y sacrificar
+    Flee,        // huye de las unidades de los jugadores
+    Aggressive,  // ataca a cualquier unidad que vea
+    Retaliate,   // neutral, pero se defiende si la atacan
+};
 
 // Solo lo usa la capa de render (float permitido: no afecta a la simulación).
 struct VisualDef {
@@ -71,6 +83,14 @@ struct EntityStats {
     core::Fixed min_range;
     std::optional<TypeId> projectile;  // a distancia: ficha del proyectil
     bool aggressive = false;           // ataca sola a los enemigos que ve
+
+    // ─── Mundo y recursos ────────────────────────────────────────────────
+    PlacementRule placement = PlacementRule::Land;
+    bool walkable = false;     // se puede caminar por encima (granjas)
+    bool naval = false;        // se mueve por el agua
+    int32_t gather_slots = 4;  // recolectores a la vez en este recurso
+    AnimalBehavior animal = AnimalBehavior::None;
+    int32_t carcass_food = 0;  // comida que deja al morir (caza)
 
     bool has(Capability c) const { return capabilities.test(static_cast<std::size_t>(c)); }
 

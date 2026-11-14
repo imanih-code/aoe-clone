@@ -44,7 +44,7 @@ public:
 
     // Usados también por el modo --demo
     void select(std::vector<core::EntityHandle> handles) { selection_ = std::move(handles); }
-    void order_move_world(core::Vec2F target, const sim::GameState& game);
+    void order_move_world(core::Vec2F target, const sim::GameState& game, bool queued = false);
     void submit(sim::Command command) { pending_.push_back(std::move(command)); }
     void begin_placement(data::TypeId building) { placement_ = Placement{building, {}, false}; }
 

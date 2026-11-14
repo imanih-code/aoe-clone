@@ -26,7 +26,8 @@ json command_json(const Command& c) {
                 {"tgt", handle_json(c.target)},
                 {"type", c.type_arg.value},
                 {"tile", json::array({c.tile.x, c.tile.y})},
-                {"i", c.index}};
+                {"i", c.index},
+                {"q", c.queued}};
 }
 
 Command command_from(const json& j) {
@@ -40,6 +41,7 @@ Command command_from(const json& j) {
     c.type_arg = data::TypeId{j.at("type").get<uint16_t>()};
     c.tile = {j.at("tile").at(0).get<int32_t>(), j.at("tile").at(1).get<int32_t>()};
     c.index = j.at("i").get<int32_t>();
+    c.queued = j.value("q", false);
     return c;
 }
 

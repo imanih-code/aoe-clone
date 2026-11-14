@@ -114,7 +114,9 @@ void EntityRenderer::draw_world(sf::RenderTarget& target, const sim::GameState& 
         v.type = e->type;
         v.owner = e->current_player;
         v.base = base;
-        v.depth = wx + wy;
+        // Lo que está a ras de suelo (campos, carne) se dibuja antes que todo lo demás
+        const bool flat = sheet.visual.shape == data::ShapeKind::Field || sheet.visual.shape == data::ShapeKind::Carcass;
+        v.depth = (flat ? -1.0e6f : 0.f) + wx + wy;
         v.is_unit = sheet.is_unit();
         visible_.push_back(v);
     }
@@ -328,6 +330,145 @@ void EntityRenderer::draw_world(sf::RenderTarget& target, const sim::GameState& 
             v.label_y = p.y;
             break;
         }
+        case data::ShapeKind::Animal: {
+            // Cuadrúpedo: cuerpo, cabeza mirando hacia donde camina y cuatro patas
+            const float r = vis.size * 40.f;
+            const sf::Color body_color = rgba(vis.color);
+            sf::Vector2f dir = world_to_iso(e.position) - world_to_iso(e.prev_position);
+            const float facing = dir.x < -0.01f ? -1.f : 1.f;
+            auto shadow = ellipse(r * 1.3f, p, 0.4f);
+            shadow.setFillColor({0, 0, 0, 60});
+            target.draw(shadow);
+            if (selected || v.owner != data::kGaia) {
+                // Ganado con dueño: collar del color del jugador
+                auto ring = ellipse(r * 1.5f, p, 0.45f);
+                ring.setFillColor(sf::Color::Transparent);
+                ring.setOutlineColor(selected ? kSelected : rgba(game.player(v.owner).color));
+                ring.setOutlineThickness(1.5f);
+                target.draw(ring);
+            }
+            const sf::Color leg = shade(body_color, 0.55f);
+            for (float lx : {-0.6f, -0.25f, 0.25f, 0.6f}) {
+                const sf::Vertex l[] = {{p + sf::Vector2f{lx * r, -r * 0.5f}, leg}, {p + sf::Vector2f{lx * r, 0.f}, leg}};
+                target.draw(l, 2, sf::PrimitiveType::Lines);
+            }
+            auto torso = ellipse(r, p - sf::Vector2f{0.f, r * 0.8f}, 0.6f);
+            torso.setScale({1.25f, 0.65f});
+            torso.setFillColor(body_color);
+            torso.setOutlineColor(shade(body_color, 0.5f));
+            torso.setOutlineThickness(1.f);
+            target.draw(torso);
+            sf::CircleShape head(r * 0.42f, 12);
+            head.setOrigin({r * 0.42f, r * 0.42f});
+            head.setPosition(p + sf::Vector2f{facing * r * 1.15f, -r * 1.15f});
+            head.setFillColor(body_color);
+            head.setOutlineColor(shade(body_color, 0.5f));
+            head.setOutlineThickness(1.f);
+            target.draw(head);
+            v.hit = sf::FloatRect({p.x - r * 1.6f, p.y - r * 1.8f}, {r * 3.2f, r * 1.9f});
+            v.label_y = p.y - r * 1.7f - 2.f;
+            break;
+        }
+        case data::ShapeKind::Carcass: {
+            const float r = vis.size * 40.f;
+            auto meat = ellipse(r, p, 0.45f);
+            meat.setFillColor(color);
+            meat.setOutlineColor(shade(color, 0.5f));
+            meat.setOutlineThickness(1.f);
+            target.draw(meat);
+            auto bone = ellipse(r * 0.35f, p - sf::Vector2f{r * 0.2f, r * 0.1f}, 0.5f);
+            bone.setFillColor(sf::Color(235, 225, 205));
+            target.draw(bone);
+            v.hit = sf::FloatRect({p.x - r, p.y - r * 0.6f}, {r * 2.f, r * 1.2f});
+            v.label_y = p.y - r * 0.6f - 2.f;
+            break;
+        }
+        case data::ShapeKind::Fish: {
+            // Ondas en el agua y unos peces
+            const float r = vis.size * 40.f;
+            auto ripple = ellipse(r * 1.1f, p, 0.5f);
+            ripple.setFillColor(sf::Color(255, 255, 255, 30));
+            ripple.setOutlineColor(sf::Color(255, 255, 255, 120));
+            ripple.setOutlineThickness(1.f);
+            target.draw(ripple);
+            const float offs[3][2] = {{-0.45f, -0.05f}, {0.35f, -0.2f}, {0.05f, 0.18f}};
+            for (const auto& o : offs) {
+                auto fish = ellipse(r * 0.28f, p + sf::Vector2f{o[0] * r, o[1] * r}, 0.45f);
+                fish.setFillColor(color);
+                fish.setOutlineColor(shade(color, 0.6f));
+                fish.setOutlineThickness(1.f);
+                target.draw(fish);
+            }
+            v.hit = sf::FloatRect({p.x - r, p.y - r * 0.6f}, {r * 2.f, r * 1.2f});
+            v.label_y = p.y - r * 0.6f - 2.f;
+            break;
+        }
+        case data::ShapeKind::Boat: {
+            const float r = vis.size * 40.f;
+            if (selected) {
+                auto ring = ellipse(r * 1.6f, p, 0.5f);
+                ring.setFillColor(sf::Color::Transparent);
+                ring.setOutlineColor(kSelected);
+                ring.setOutlineThickness(1.5f);
+                target.draw(ring);
+            }
+            sf::ConvexShape hull(4);
+            hull.setPoint(0, p + sf::Vector2f{-r * 1.3f, -r * 0.45f});
+            hull.setPoint(1, p + sf::Vector2f{r * 1.3f, -r * 0.45f});
+            hull.setPoint(2, p + sf::Vector2f{r * 0.9f, r * 0.15f});
+            hull.setPoint(3, p + sf::Vector2f{-r * 0.9f, r * 0.15f});
+            hull.setFillColor(sf::Color(118, 82, 48));
+            hull.setOutlineColor(kOutline);
+            hull.setOutlineThickness(1.f);
+            target.draw(hull);
+            const sf::Vertex mast[] = {{p + sf::Vector2f{0.f, -r * 0.45f}, sf::Color(70, 50, 30)},
+                                       {p + sf::Vector2f{0.f, -r * 2.2f}, sf::Color(70, 50, 30)}};
+            target.draw(mast, 2, sf::PrimitiveType::Lines);
+            sf::ConvexShape sail(3);
+            sail.setPoint(0, p + sf::Vector2f{1.f, -r * 2.1f});
+            sail.setPoint(1, p + sf::Vector2f{r * 1.0f, -r * 0.7f});
+            sail.setPoint(2, p + sf::Vector2f{1.f, -r * 0.6f});
+            sail.setFillColor(color);
+            sail.setOutlineColor(shade(color, 0.5f));
+            sail.setOutlineThickness(1.f);
+            target.draw(sail);
+            if (e.carry.amount > core::Fixed{}) {
+                auto load = ellipse(r * 0.25f, p + sf::Vector2f{-r * 0.6f, -r * 0.55f}, 0.6f);
+                load.setFillColor(resource_color(e.carry.resource));
+                target.draw(load);
+            }
+            v.hit = sf::FloatRect({p.x - r * 1.4f, p.y - r * 2.3f}, {r * 2.8f, r * 2.6f});
+            v.label_y = p.y - r * 2.3f - 3.f;
+            break;
+        }
+        case data::ShapeKind::Field: {
+            // Campo plano con surcos; amarillea según se agota
+            const float ax = static_cast<float>(e.anchor.x), ay = static_cast<float>(e.anchor.y);
+            const float fw = sheet.stats.footprint_w, fh = sheet.stats.footprint_h;
+            float ripe = 1.f;
+            if (e.resource_node && e.resource_node->amount_max > 0) {
+                ripe = static_cast<float>(e.resource_node->amount_remaining) / static_cast<float>(e.resource_node->amount_max);
+            }
+            sf::Color soil = mix(sf::Color(170, 140, 80), sf::Color(120, 150, 60), ripe);
+            if (e.construction) soil = sf::Color(150, 120, 80, 150);
+            auto field = quad(world_to_iso(ax, ay), world_to_iso(ax + fw, ay), world_to_iso(ax + fw, ay + fh), world_to_iso(ax, ay + fh), soil);
+            if (selected) {
+                field.setOutlineColor(kSelected);
+                field.setOutlineThickness(1.5f);
+            }
+            target.draw(field);
+            sf::VertexArray furrows(sf::PrimitiveType::Lines);
+            const sf::Color line = shade(soil, 0.75f);
+            for (int i = 1; i < 6; ++i) {
+                const float t = static_cast<float>(i) / 6.f;
+                furrows.append({world_to_iso(ax + fw * t, ay + 0.1f), line});
+                furrows.append({world_to_iso(ax + fw * t, ay + fh - 0.1f), line});
+            }
+            target.draw(furrows);
+            v.hit = bounds_of({world_to_iso(ax, ay), world_to_iso(ax + fw, ay), world_to_iso(ax + fw, ay + fh), world_to_iso(ax, ay + fh)});
+            v.label_y = world_to_iso(ax, ay).y + 6.f;
+            break;
+        }
         }
 
         // Barra de vida: lo seleccionado y todo lo que esté herido (unidades y edificios)
@@ -343,6 +484,22 @@ void EntityRenderer::draw_world(sf::RenderTarget& target, const sim::GameState& 
             fg.setPosition(bg.getPosition());
             fg.setFillColor(ratio > 0.5f ? sf::Color(70, 220, 70) : ratio > 0.25f ? sf::Color(230, 200, 60) : sf::Color(230, 70, 60));
             target.draw(fg);
+        }
+
+        // Órdenes en cola (Shift) de lo seleccionado: la ruta que va a seguir, en orden
+        if (selected && !e.orders.empty()) {
+            sf::VertexArray route(sf::PrimitiveType::LineStrip);
+            route.append({p, sf::Color(255, 230, 120, 90)});
+            for (const auto& order : e.orders) {
+                const sf::Vector2f q = world_to_iso(order.pos);
+                route.append({q, sf::Color(255, 230, 120, 160)});
+                sf::CircleShape dot(3.f, 8);
+                dot.setOrigin({3.f, 3.f});
+                dot.setPosition(q);
+                dot.setFillColor(sf::Color(255, 230, 120, 200));
+                target.draw(dot);
+            }
+            target.draw(route);
         }
 
         // Punto de reunión del edificio seleccionado

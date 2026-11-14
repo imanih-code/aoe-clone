@@ -47,6 +47,7 @@ private:
     std::vector<core::EntityHandle> attacking_;  // unidades ya enviadas en una oleada
     std::vector<core::EntityHandle> reserved_;   // aldeanos con orden en este think() (no reasignarlos)
     bool farm_placed_ = false;
+    std::vector<core::EntityHandle> hunted_;     // ganado propio que ya tiene a alguien asignado
 };
 
 }  // namespace sim

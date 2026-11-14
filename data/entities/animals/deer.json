@@ -1,0 +1,13 @@
+{
+  // Salvaje que huye: hay que alcanzarlo. Corre más que un aldeano.
+  "key": "deer",
+  "extends": "_animal_base",
+  "name": "Ciervo",
+  "description": "Huye de las unidades. Da 120 de comida.",
+  "animal": "flee",
+  "hp": 6,
+  "speed": 1.15,
+  "sight": 5,
+  "carcass_food": 120,
+  "visual": { "size": 0.24, "color": "#a8784a", "label": "Ciervo" }
+}

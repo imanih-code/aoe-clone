@@ -71,7 +71,12 @@ ShapeKind parse_shape(const std::string& s, const std::string& where) {
     if (s == "mine") return ShapeKind::Mine;
     if (s == "bush") return ShapeKind::Bush;
     if (s == "arrow") return ShapeKind::Arrow;
-    throw DataError(where + ": shape desconocida '" + s + "' (unit, cavalry, building, tree, mine, bush, arrow)");
+    if (s == "animal") return ShapeKind::Animal;
+    if (s == "carcass") return ShapeKind::Carcass;
+    if (s == "fish") return ShapeKind::Fish;
+    if (s == "boat") return ShapeKind::Boat;
+    if (s == "field") return ShapeKind::Field;
+    throw DataError(where + ": shape desconocida '" + s + "' (unit, cavalry, building, tree, mine, bush, arrow, animal, carcass, fish, boat, field)");
 }
 
 std::vector<fs::path> json_files_in(const fs::path& dir) {
@@ -359,6 +364,24 @@ DataRegistry DataRegistry::load(const fs::path& data_dir) {
             s.stats.range = core::Fixed::from_double(j.value("range", 0.0));
             s.stats.min_range = core::Fixed::from_double(j.value("min_range", 0.0));
             s.stats.aggressive = j.value("aggressive", false);
+            {
+                const std::string place = j.value("placement", std::string("land"));
+                if (place == "land") s.stats.placement = PlacementRule::Land;
+                else if (place == "water") s.stats.placement = PlacementRule::Water;
+                else if (place == "shore") s.stats.placement = PlacementRule::Shore;
+                else throw DataError(where + ": placement desconocido '" + place + "' (land, water, shore)");
+                const std::string animal = j.value("animal", std::string("none"));
+                if (animal == "none") s.stats.animal = AnimalBehavior::None;
+                else if (animal == "domestic") s.stats.animal = AnimalBehavior::Domestic;
+                else if (animal == "flee") s.stats.animal = AnimalBehavior::Flee;
+                else if (animal == "aggressive") s.stats.animal = AnimalBehavior::Aggressive;
+                else if (animal == "retaliate") s.stats.animal = AnimalBehavior::Retaliate;
+                else throw DataError(where + ": animal desconocido '" + animal + "' (none, domestic, flee, aggressive, retaliate)");
+            }
+            s.stats.walkable = j.value("walkable", false);
+            s.stats.naval = j.value("naval", false);
+            s.stats.gather_slots = std::max(1, j.value("gather_slots", 4));
+            s.stats.carcass_food = j.value("carcass_food", 0);
             s.stats.min_age = static_cast<uint8_t>(j.value("age", 0));
             if (s.stats.min_age >= reg.age_names_.size()) throw DataError(where + ": age fuera de rango (ver ages.json)");
             if (s.stats.has(Capability::Attack) && s.stats.attacks.empty()) {

@@ -1,16 +1,19 @@
 {
-  // Fuente de comida renovable: un edificio que también es recurso.
-  // Solo la puede trabajar su dueño; cuando se agota desaparece y hay que construir otra.
+  // Fuente de comida renovable de 3x3 por la que se camina. Un solo granjero:
+  // va de casilla en casilla del campo hasta llenar la carga.
+  // Solo la puede trabajar su dueño; cuando se agota desaparece y hay que replantarla.
   "key": "farm",
   "extends": "_building_base",
   "name": "Granja",
-  "description": "Campo de cultivo: comida para un aldeano. Se agota y hay que replantarla.",
+  "description": "Campo de cultivo de 3x3 para un aldeano. Se agota y hay que replantarla.",
   "classes": ["building", "resource_node"],
   "hp": 480,
   "footprint": [3, 3],
+  "walkable": true,
+  "gather_slots": 1,
   "sight": 1,
   "resource": { "type": "food", "amount": 250 },
   "cost": { "wood": 60 },
   "build_time": 15,
-  "visual": { "height": 0.12, "color": "#b59a52", "label": "Granja" }
+  "visual": { "shape": "field", "height": 0.1, "color": "#b59a52", "player_color": false, "label": "Granja" }
 }

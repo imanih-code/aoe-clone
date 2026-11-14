@@ -24,6 +24,7 @@ licensed). See [architecture.md §11.7](architecture.md).
 | Phase 3 — economy | Done: data inheritance (`extends`), per-sheet capabilities, gather/deposit cycle, construction sites with several builders, houses and population, training queues with cancel and rally points, command panel with grid hotkeys, contextual right click |
 | Phase 4 — combat, techs, civs | Done: armor-class damage, melee and ranged combat with arrows as entities, auto-attack and retaliation, towers, modifier resolver with per-player effective stats, 3 ages, techs, upgrade lines, 3 original civilizations with bonuses and unique units |
 | Phase 5 — fog, AI, victory, replays | Mostly done: per-player fog of war respected by the simulation, smooth fog and clickable minimap, scripted AI (economy, farms, buildings, age-up, attack waves, defense), conquest victory with end screen, replays verified by state hash, speed x1–x8, pause, spectator mode. Pending: a full game played to victory has not been verified yet |
+| Phase 5b — living world | Done: walkable 3x3 farms worked tile by tile, gather slots per resource, wildlife (livestock, fleeing prey, hostile wolves, retaliating boars, carcasses), shore and deep-water fish with dock and fishing boat, fog-aware pathfinding that replans on discovery, Shift order queues and villagers that start working what they just built |
 | Phase 6+ | Dynamic capabilities, conversion, garrison, morph and triggers next — see [`ROADMAP.md`](ROADMAP.md) |
 | `src/*.py`, `main.py`, `requirements.txt` | Legacy Python/pygame prototype, superseded by the C++ code; to be removed |
 
@@ -108,7 +109,8 @@ ctest --preset windows-release
 ## Controls
 
 - Left click: select · drag: box select your units · `Shift`: add/remove · double click: all of that type on screen
-- Right click with units: move (formation) · on a resource: gather · on your construction site: help build · on an enemy: attack
+- Right click with units: move (formation) · on a resource: gather · on an animal: hunt (villagers) or attack (troops) · on your construction site: help build · on an enemy: attack
+- `Shift` + any order: add it to each unit's queue; the queued route is drawn with yellow dots. `Shift` while placing buildings: several foundations, built one after another
 - `Ctrl` + right click: attack-move (walk there fighting anything on the way)
 - Minimap (bottom right): click or drag to move the camera
 - Right click with a building selected: set its rally point

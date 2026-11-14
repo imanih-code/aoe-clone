@@ -1,6 +1,7 @@
 #include "sim/game/game_state.hpp"
 
 #include <algorithm>
+#include <cstdlib>
 
 namespace sim {
 
@@ -27,6 +28,7 @@ GameState::GameState(const data::DataRegistry& data, const GameConfig& config)
     setup_players();
     generate_map();
     for (auto& ps : players_) ps.visibility.reset(map_.width(), map_.height());
+    carcass_type_ = data_.find_type("carcass");
     apply_pending();
     visibility_system(true);
 }
@@ -37,6 +39,7 @@ void GameState::step(std::span<const Command> commands) {
     // Orden fijo de sistemas (architecture.md, Diagrama 7)
     for (const Command& cmd : commands) apply_command(cmd);
     production_system();
+    animal_system();       // animales: huir, deambular, ganado que cambia de dueño
     action_system();       // mover, recolectar, construir, atacar (el daño se acumula)
     projectile_system();   // las flechas en vuelo avanzan e impactan
     resolve_damage();      // se aplica todo el daño a la vez: dos que se matan, mueren los dos
@@ -57,12 +60,80 @@ bool GameState::can_afford(data::PlayerId p, const data::ResourceArray& cost) co
     return true;
 }
 
+namespace {
+
+Placement placement_of(const data::ObjSheet& s) {
+    switch (s.stats.placement) {
+    case data::PlacementRule::Water: return Placement::Water;
+    case data::PlacementRule::Shore: return Placement::Shore;
+    case data::PlacementRule::Land: break;
+    }
+    return Placement::Land;
+}
+
+}  // namespace
+
 bool GameState::can_place(data::TypeId building, core::TilePos tile) const {
     const auto& s = data_.sheet(building);
-    return s.is_building() && map_.is_area_free(tile.x, tile.y, s.stats.footprint_w, s.stats.footprint_h);
+    return s.is_building() && map_.is_area_free(tile.x, tile.y, s.stats.footprint_w, s.stats.footprint_h, placement_of(s));
+}
+
+PathQuery GameState::path_query(const SpawnableEntity& e) const {
+    PathQuery q;
+    q.layer = move_layer(e);
+    // Gaia (animales) conoce el terreno; los jugadores solo lo que han explorado
+    if (e.current_player != data::kGaia) q.fog = &players_[e.current_player].visibility;
+    return q;
 }
 
 // ─── Comandos ────────────────────────────────────────────────────────────────
+
+std::unique_ptr<IAction> GameState::make_action(SpawnableEntity& e, const Order& order) {
+    const auto& s = sheet_of(e);
+    switch (order.type) {
+    case CommandType::Move:
+        if (s.can_move()) return std::make_unique<MoveAction>(order.pos);
+        break;
+    case CommandType::AttackMove:
+        if (s.can_move()) return std::make_unique<AttackMoveAction>(order.pos);
+        break;
+    case CommandType::Gather: {
+        const SpawnableEntity* t = entities_.get(order.target);
+        if (!t || !s.stats.has(data::Capability::Gather)) break;
+        const auto& st = stats_of(e);
+        if (t->resource_node) {
+            const auto res = t->resource_node->resource;
+            if (st.gather_per_tick[data::index_of(res)] > Fixed{}) return std::make_unique<GatherAction>(order.target, res);
+        } else if (is_huntable(*t) && st.gather_per_tick[data::index_of(data::ResourceTag::Food)] > Fixed{} && can_target(e, *t)) {
+            return std::make_unique<GatherAction>(order.target, data::ResourceTag::Food);  // cazar y luego recolectar
+        }
+        break;
+    }
+    case CommandType::Build: {
+        const SpawnableEntity* t = entities_.get(order.target);
+        if (t && !t->is_complete() && t->current_player == e.current_player && s.stats.has(data::Capability::Build)) {
+            return std::make_unique<BuildAction>(order.target);
+        }
+        break;
+    }
+    case CommandType::Attack: {
+        const SpawnableEntity* t = entities_.get(order.target);
+        if (t && s.can_attack() && can_target(e, *t)) return std::make_unique<AttackAction>(order.target, false);
+        break;
+    }
+    default: break;
+    }
+    return nullptr;
+}
+
+void GameState::give_order(SpawnableEntity& e, const Order& order, bool queued) {
+    if (queued && (e.action || !e.orders.empty())) {
+        e.orders.push_back(order);  // Shift: a la cola, en orden de llegada
+        return;
+    }
+    e.orders.clear();
+    e.action = make_action(e, order);
+}
 
 void GameState::apply_command(const Command& cmd) {
     if (cmd.issuer == data::kGaia || cmd.issuer > config_.num_players) return;
@@ -81,39 +152,38 @@ void GameState::apply_command(const Command& cmd) {
 
     switch (cmd.type) {
     case CommandType::Stop:
-        for (auto h : actors) entities_.get(h)->action.reset();
+        for (auto h : actors) {
+            entities_.get(h)->action.reset();
+            entities_.get(h)->orders.clear();
+        }
         break;
 
-    case CommandType::Move: {
-        std::vector<core::EntityHandle> units;
-        std::copy_if(actors.begin(), actors.end(), std::back_inserter(units), movable);
-        command_move(units, cmd.target_pos);
-        break;
-    }
-
+    case CommandType::Move:
     case CommandType::AttackMove: {
         std::vector<core::EntityHandle> units;
         std::copy_if(actors.begin(), actors.end(), std::back_inserter(units), movable);
-        command_move(units, cmd.target_pos, true);
+        command_move(units, cmd.target_pos, cmd.type == CommandType::AttackMove, cmd.queued);
         break;
     }
 
     case CommandType::Gather: {
         const SpawnableEntity* node = entities_.get(cmd.target);
-        if (!node || !node->resource_node || !is_known_to(cmd.issuer, *node)) break;
-        if (node->current_player != data::kGaia && (node->current_player != cmd.issuer || !node->is_complete())) break;  // granja ajena o en obra
-        const data::ResourceTag res = node->resource_node->resource;
+        if (!node) break;
+        if (node->resource_node) {
+            if (!is_known_to(cmd.issuer, *node)) break;
+            if (node->current_player != data::kGaia && (node->current_player != cmd.issuer || !node->is_complete())) break;  // granja ajena o en obra
+        } else if (!is_huntable(*node) || !is_visible_to(cmd.issuer, *node)) {
+            break;
+        }
         std::vector<core::EntityHandle> others;
+        const Order order{CommandType::Gather, cmd.target, node->position, {}};
         for (auto h : actors) {
             SpawnableEntity& e = *entities_.get(h);
-            const auto& s = sheet_of(e);
-            if (s.stats.has(data::Capability::Gather) && s.stats.gather_per_tick[data::index_of(res)] > Fixed{}) {
-                e.action = std::make_unique<GatherAction>(cmd.target, res);
-            } else if (s.can_move()) {
-                others.push_back(h);
-            }
+            auto probe = make_action(e, order);  // ¿puede recolectar esto?
+            if (probe) give_order(e, order, cmd.queued);
+            else if (sheet_of(e).can_move()) others.push_back(h);
         }
-        command_move(others, node->position);
+        command_move(others, node->position, false, cmd.queued);
         break;
     }
 
@@ -122,7 +192,7 @@ void GameState::apply_command(const Command& cmd) {
         if (!site || site->is_complete() || site->current_player != cmd.issuer) break;
         for (auto h : actors) {
             SpawnableEntity& e = *entities_.get(h);
-            if (sheet_of(e).stats.has(data::Capability::Build)) e.action = std::make_unique<BuildAction>(cmd.target);
+            if (sheet_of(e).stats.has(data::Capability::Build)) give_order(e, {CommandType::Build, cmd.target, site->position, {}}, cmd.queued);
         }
         break;
     }
@@ -165,12 +235,13 @@ void GameState::apply_command(const Command& cmd) {
         const SpawnableEntity* target = entities_.get(cmd.target);
         if (!target || !is_visible_to(cmd.issuer, *target)) break;  // no se ataca lo que no se ve
         std::vector<core::EntityHandle> others;
+        const Order order{CommandType::Attack, cmd.target, target->position, {}};
         for (auto h : actors) {
             SpawnableEntity& e = *entities_.get(h);
-            if (sheet_of(e).can_attack() && is_enemy(e, *target)) e.action = std::make_unique<AttackAction>(cmd.target, false);
+            if (sheet_of(e).can_attack() && can_target(e, *target)) give_order(e, order, cmd.queued);
             else if (sheet_of(e).can_move()) others.push_back(h);
         }
-        command_move(others, target->position);
+        command_move(others, target->position, false, cmd.queued);
         break;
     }
 
@@ -187,13 +258,13 @@ void GameState::apply_command(const Command& cmd) {
     case CommandType::SetRally:
         for (auto h : actors) {
             SpawnableEntity& b = *entities_.get(h);
-            if (!sheet_of(b).trains.empty()) b.rally_point = cmd.target_pos;
+            if (!trainable_at(cmd.issuer, b.type).empty()) b.rally_point = cmd.target_pos;
         }
         break;
     }
 }
 
-void GameState::command_move(const std::vector<core::EntityHandle>& actors, Vec2F target, bool attack_move) {
+void GameState::command_move(const std::vector<core::EntityHandle>& actors, Vec2F target, bool attack_move, bool queued) {
     // Formación en cuadrícula alrededor del destino para que no se apilen.
     const int n = static_cast<int>(actors.size());
     if (n == 0) return;
@@ -207,9 +278,8 @@ void GameState::command_move(const std::vector<core::EntityHandle>& actors, Vec2
         const Fixed ox = spacing * Fixed::ratio(2 * (i % side) - (side - 1), 2);
         const Fixed oy = spacing * Fixed::ratio(2 * (i / side) - (rows - 1), 2);
         const Vec2F t{std::clamp(target.x + ox, Fixed::ratio(1, 2), max_x), std::clamp(target.y + oy, Fixed::ratio(1, 2), max_y)};
-        auto& action = entities_.get(actors[static_cast<std::size_t>(i)])->action;
-        if (attack_move) action = std::make_unique<AttackMoveAction>(t);
-        else action = std::make_unique<MoveAction>(t);
+        give_order(*entities_.get(actors[static_cast<std::size_t>(i)]),
+                   {attack_move ? CommandType::AttackMove : CommandType::Move, {}, t, {}}, queued);
     }
 }
 
@@ -229,10 +299,17 @@ void GameState::command_place_building(const Command& cmd, const std::vector<cor
     for (std::size_t i = 0; i < data::kResourceCount; ++i) res[i] -= sheet.stats.cost[i];
 
     // Los comandos se aplican fuera de la iteración de entidades: aquí se puede crear ya.
-    const core::EntityHandle site = spawn_now({cmd.type_arg, cmd.issuer, cmd.tile, true});
+    // Con Shift, el cimiento aparece ya y la obra se añade a la cola de cada constructor.
+    SpawnRequest req;
+    req.type = cmd.type_arg;
+    req.owner = cmd.issuer;
+    req.tile = cmd.tile;
+    req.as_construction_site = true;
+    const core::EntityHandle site = spawn_now(req);
     if (!site) return;
-    displace_units_from(cmd.tile, sheet.stats.footprint_w, sheet.stats.footprint_h);
-    for (auto h : builders) entities_.get(h)->action = std::make_unique<BuildAction>(site);
+    if (!sheet.stats.walkable) displace_units_from(cmd.tile, sheet.stats.footprint_w, sheet.stats.footprint_h);
+    const Vec2F pos = entities_.get(site)->position;
+    for (auto h : builders) give_order(*entities_.get(h), {CommandType::Build, site, pos, {}}, cmd.queued);
 }
 
 // ─── Sistemas ────────────────────────────────────────────────────────────────
@@ -270,20 +347,77 @@ void GameState::production_system() {
     }
 }
 
+int GameState::gatherers_on(core::EntityHandle node) const {
+    return node.index < gather_claims_.size() ? gather_claims_[node.index] : 0;
+}
+
+void GameState::claim_gather(core::EntityHandle node) {
+    if (node.index >= gather_claims_.size()) gather_claims_.resize(node.index + 1, 0);
+    ++gather_claims_[node.index];
+}
+
 void GameState::action_system() {
+    // Quién está recolectando qué (para no amontonar más de los sitios que tiene cada recurso).
+    // Se cuenta al principio del tick a partir del estado; quien entra durante el tick suma su plaza.
+
+    std::fill(gather_claims_.begin(), gather_claims_.end(), 0);
+    entities_.for_each([&](core::EntityHandle, const SpawnableEntity& e) {
+        if (!e.action || e.action->kind() != ActionKind::Gather) return;
+        const auto& gather = static_cast<const GatherAction&>(*e.action);
+        if (gather.is_gathering()) claim_gather(gather.target());
+    });
+
     entities_.for_each([&](core::EntityHandle h, SpawnableEntity& e) {
         e.prev_position = e.position;
+        // Sin acción pero con órdenes en cola: empezar la siguiente (las inválidas se descartan)
+        while (!e.action && !e.orders.empty()) {
+            const Order next = e.orders.front();
+            e.orders.pop_front();
+            e.action = make_action(e, next);
+        }
         if (!e.action) return;
         const Vec2F before = e.position;
-        if (e.action->tick(e, *this) == ActionStatus::Done) e.action.reset();
+        if (e.action->tick(e, *this) == ActionStatus::Done) {
+            e.action.reset();
+            while (!e.action && !e.orders.empty()) {
+                const Order next = e.orders.front();
+                e.orders.pop_front();
+                e.action = make_action(e, next);
+            }
+        }
         if (!(before == e.position)) spatial_.move(h, before, e.position);
     });
+}
+
+void GameState::continue_after_build(SpawnableEntity& builder, core::EntityHandle site_handle) {
+    if (!builder.orders.empty()) return;  // tiene más trabajo en cola: respetarlo
+    const SpawnableEntity* site = entities_.get(site_handle);
+    if (!site || !stats_of(builder).has(data::Capability::Gather)) return;
+    const auto& ss = sheet_of(*site);
+    // Granja: el que la construye la trabaja
+    if (site->resource_node && ss.stats.walkable) {
+        builder.orders.push_front({CommandType::Gather, site_handle, site->position, {}});
+        return;
+    }
+    // Depósito: el recurso que acepta más cercano, si hay alguno libre cerca (comida, madera, oro, piedra)
+    for (std::size_t r = 0; r < data::kResourceCount; ++r) {
+        if (!ss.stats.dropoff.test(r) || stats_of(builder).gather_per_tick[r] <= Fixed{}) continue;
+        // La plaza mayor acepta todo: ahí no tiene sentido elegir uno al azar
+        if (ss.stats.dropoff.count() == data::kResourceCount) return;
+        const core::EntityHandle node = nearest_resource(static_cast<data::ResourceTag>(r), site->position, 7, builder.current_player,
+                                                         /*skip_full=*/true, move_layer(builder));
+        if (node) {
+            builder.orders.push_front({CommandType::Gather, node, entities_.get(node)->position, {}});
+            return;
+        }
+    }
 }
 
 // ─── Movimiento ──────────────────────────────────────────────────────────────
 
 std::optional<MovePlan> GameState::plan_path(const SpawnableEntity& e, Vec2F target) {
-    auto result = pathfinder_.find(map_, core::tile_of(e.position), core::tile_of(target));
+    const PathQuery query = path_query(e);
+    auto result = pathfinder_.find(map_, core::tile_of(e.position), core::tile_of(target), query);
     if (!result) return std::nullopt;
 
     // Centros de tile como puntos de paso; el último es el destino exacto si es alcanzable.
@@ -302,7 +436,7 @@ std::optional<MovePlan> GameState::plan_path(const SpawnableEntity& e, Vec2F tar
         std::size_t best = i;
         const std::size_t limit = std::min(points.size(), i + 16);
         for (std::size_t j = i + 1; j < limit; ++j) {
-            if (line_is_clear(map_, from, points[j])) best = j;
+            if (line_is_clear(map_, from, points[j], query)) best = j;
         }
         plan.waypoints.push_back(points[best]);
         from = points[best];
@@ -312,8 +446,11 @@ std::optional<MovePlan> GameState::plan_path(const SpawnableEntity& e, Vec2F tar
 }
 
 std::optional<MovePlan> GameState::plan_path_to(const SpawnableEntity& e, const SpawnableEntity& target) {
-    if (in_reach(e, target)) return MovePlan{};
     const auto& ts = sheet_of(target);
+    // Recursos y edificios transitables (granja, carne): se va hasta dentro, no basta con llegar al borde
+    if (ts.stats.walkable) return plan_path(e, target.position);
+    if (in_reach(e, target)) return MovePlan{};
+    const PathQuery query = path_query(e);
     const int x0 = target.anchor.x - 1, y0 = target.anchor.y - 1;
     const int x1 = target.anchor.x + ts.stats.footprint_w, y1 = target.anchor.y + ts.stats.footprint_h;
     // Tile libre del anillo alrededor del footprint más cercano a la unidad
@@ -322,7 +459,7 @@ std::optional<MovePlan> GameState::plan_path_to(const SpawnableEntity& e, const 
     for (int y = y0; y <= y1; ++y) {
         for (int x = x0; x <= x1; ++x) {
             if (x != x0 && x != x1 && y != y0 && y != y1) continue;
-            if (!map_.is_passable(x, y)) continue;
+            if (!query.believes_passable(map_, {x, y})) continue;
             const int64_t d = dist_sq_raw(core::tile_center({x, y}), e.position);
             if (!best || d < best_d) {
                 best = core::TilePos{x, y};
@@ -335,6 +472,13 @@ std::optional<MovePlan> GameState::plan_path_to(const SpawnableEntity& e, const 
 }
 
 StepResult GameState::step_along(SpawnableEntity& e, MovePlan& plan) {
+    const MoveLayer layer = move_layer(e);
+    // Cada medio segundo, comprobar el tramo siguiente con lo que se ha descubierto (niebla):
+    // si ahora se ve que hay un lago o un bosque en medio, replanificar.
+    if ((tick_ + e.self.index) % 10 == 0 && !plan.done() && e.current_player != data::kGaia) {
+        const PathQuery query = path_query(e);
+        if (!line_is_clear(map_, e.position, plan.current(), query)) return StepResult::Blocked;
+    }
     Fixed step = stats_of(e).move_speed / Fixed::from_int(kTicksPerSecond);
     while (step > Fixed{} && !plan.done()) {
         const Vec2F d = plan.current() - e.position;
@@ -343,7 +487,7 @@ StepResult GameState::step_along(SpawnableEntity& e, MovePlan& plan) {
         const Vec2F candidate = reaches ? plan.current() : e.position + Vec2F{d.x * step / dist, d.y * step / dist};
         const core::TilePos from = core::tile_of(e.position);
         const core::TilePos to = core::tile_of(candidate);
-        if (!(from == to) && !map_.is_passable(to)) return StepResult::Blocked;  // un edificio nuevo cortó el camino
+        if (!(from == to) && !map_.is_passable(to, layer)) return StepResult::Blocked;  // obstáculo real (edificio nuevo, agua...)
         e.position = candidate;
         if (reaches) {
             step -= dist;
@@ -366,12 +510,14 @@ bool GameState::in_reach(const SpawnableEntity& e, const SpawnableEntity& target
 
 // ─── Economía ────────────────────────────────────────────────────────────────
 
-core::EntityHandle GameState::nearest_dropoff(data::PlayerId p, data::ResourceTag r, Vec2F from) const {
+core::EntityHandle GameState::nearest_dropoff(data::PlayerId p, data::ResourceTag r, Vec2F from, MoveLayer layer) const {
     core::EntityHandle best;
     int64_t best_d = 0;
     for (core::EntityHandle h : players_.at(p).buildings) {
         const SpawnableEntity* b = entities_.get(h);
         if (!b || !b->is_complete() || !sheet_of(*b).stats.dropoff.test(data::index_of(r))) continue;
+        // Los barcos solo pueden descargar en edificios del agua (muelle)
+        if (layer == MoveLayer::Water && sheet_of(*b).stats.placement == data::PlacementRule::Land) continue;
         const int64_t d = dist_sq_raw(b->position, from);
         if (!best || d < best_d) {
             best = h;
@@ -381,16 +527,26 @@ core::EntityHandle GameState::nearest_dropoff(data::PlayerId p, data::ResourceTa
     return best;
 }
 
-core::EntityHandle GameState::nearest_resource(data::ResourceTag r, Vec2F from, int max_tiles, data::PlayerId for_player) const {
+core::EntityHandle GameState::nearest_resource(data::ResourceTag r, Vec2F from, int max_tiles, data::PlayerId for_player, bool skip_full,
+                                               std::optional<MoveLayer> reach, core::EntityHandle exclude) const {
     std::vector<core::EntityHandle> found;
     const Fixed m = Fixed::from_int(max_tiles);
     spatial_.query_rect({from.x - m, from.y - m}, {from.x + m, from.y + m}, found);
     core::EntityHandle best;
     int64_t best_d = 0;
     for (core::EntityHandle h : found) {
+        if (h == exclude) continue;
         const SpawnableEntity* n = entities_.get(h);
         if (!n || !n->resource_node || n->resource_node->resource != r || n->resource_node->amount_remaining <= 0) continue;
         if (n->current_player != data::kGaia && (n->current_player != for_player || !n->is_complete())) continue;  // granjas ajenas o en obra
+        const auto& ns = sheet_of(*n);
+        if (reach) {
+            const bool deep = ns.stats.placement == data::PlacementRule::Water;
+            const bool in_water = ns.stats.placement != data::PlacementRule::Land;
+            if (*reach == MoveLayer::Land && deep) continue;       // aguas profundas: solo barcos
+            if (*reach == MoveLayer::Water && !in_water) continue;  // los barcos no talan árboles
+        }
+        if (skip_full && gatherers_on(h) >= stats_of(*n).gather_slots) continue;
         const int64_t d = dist_sq_raw(n->position, from);
         if (d > static_cast<int64_t>(m.raw) * m.raw) continue;
         if (!best || d < best_d || (d == best_d && h.index < best.index)) {
@@ -444,24 +600,47 @@ core::EntityHandle GameState::spawn_now(const SpawnRequest& req) {
     }
 
     if (sheet.is_unit()) {
-        auto tile = Pathfinder::nearest_passable(map_, req.tile, 24);
+        PathQuery q;
+        q.layer = sheet.stats.naval ? MoveLayer::Water : MoveLayer::Land;
+        auto tile = Pathfinder::nearest_passable(map_, req.tile, 24, q);
         if (!tile) return {};
         e.anchor = *tile;
         e.position = core::tile_center(*tile);
     } else {
         const int w = sheet.stats.footprint_w;
         const int h = sheet.stats.footprint_h;
-        if (!map_.is_area_free(req.tile.x, req.tile.y, w, h)) return {};
-        e.anchor = req.tile;
-        e.position = {Fixed::from_int(req.tile.x) + Fixed::ratio(w, 2), Fixed::from_int(req.tile.y) + Fixed::ratio(h, 2)};
-        map_.add_blocker(req.tile.x, req.tile.y, w, h);
+        const Placement rule = placement_of(sheet);
+        core::TilePos at = req.tile;
+        if (!map_.is_area_free(at.x, at.y, w, h, rule)) {
+            if (!req.nearby_ok) return {};
+            // Buscar un hueco cercano (la carne de un animal que cayó junto a un árbol)
+            bool found = false;
+            for (int r = 1; r <= 3 && !found; ++r) {
+                for (int dy = -r; dy <= r && !found; ++dy) {
+                    for (int dx = -r; dx <= r && !found; ++dx) {
+                        if (std::max(std::abs(dx), std::abs(dy)) != r) continue;
+                        if (map_.is_area_free(req.tile.x + dx, req.tile.y + dy, w, h, rule)) {
+                            at = {req.tile.x + dx, req.tile.y + dy};
+                            found = true;
+                        }
+                    }
+                }
+            }
+            if (!found) return {};
+        }
+        e.anchor = at;
+        e.position = {Fixed::from_int(at.x) + Fixed::ratio(w, 2), Fixed::from_int(at.y) + Fixed::ratio(h, 2)};
+        map_.add_blocker(at.x, at.y, w, h, !sheet.stats.walkable);
     }
     if (req.as_construction_site && sheet.is_building()) {
         e.construction = ConstructionData{Fixed{}, std::max<uint32_t>(1, sheet.stats.build_ticks)};
         e.hp = 1;
     }
     e.prev_position = e.position;
-    if (sheet.resource) e.resource_node = ResourceNodeData{sheet.resource->resource, sheet.resource->amount, sheet.resource->amount};
+    if (sheet.resource) {
+        const int32_t amount = req.resource_amount.value_or(sheet.resource->amount);
+        e.resource_node = ResourceNodeData{sheet.resource->resource, amount, amount};
+    }
 
     const Vec2F pos = e.position;
     const bool complete = !e.construction;
@@ -481,13 +660,17 @@ void GameState::despawn_now(core::EntityHandle h) {
     SpawnableEntity* e = entities_.get(h);
     if (!e) return;
     const data::ObjSheet& sheet = data_.sheet(e->type);
-    if (!sheet.is_unit()) map_.remove_blocker(e->anchor.x, e->anchor.y, sheet.stats.footprint_w, sheet.stats.footprint_h);
+    if (!sheet.is_unit() && !sheet.is_projectile()) {
+        map_.remove_blocker(e->anchor.x, e->anchor.y, sheet.stats.footprint_w, sheet.stats.footprint_h, !sheet.stats.walkable);
+    }
     spatial_.remove(h, e->position);
     PlayerState& owner = players_[e->current_player];
     std::erase(owner.units, h);
     std::erase(owner.buildings, h);
-    owner.population_current -= sheet.stats.population_cost;
-    if (e->is_complete()) owner.population_cap -= sheet.stats.population_provided;
+    if (!sheet.is_projectile()) {
+        owner.population_current -= sheet.stats.population_cost;
+        if (e->is_complete()) owner.population_cap -= sheet.stats.population_provided;
+    }
     entities_.erase(h);
 }
 
@@ -508,7 +691,9 @@ void GameState::displace_units_from(core::TilePos anchor, int w, int h) {
         if (!e || !sheet_of(*e).is_unit()) continue;
         const core::TilePos t = core::tile_of(e->position);
         if (t.x < anchor.x || t.y < anchor.y || t.x >= anchor.x + w || t.y >= anchor.y + h) continue;
-        if (auto free = Pathfinder::nearest_passable(map_, t, 8)) {
+        PathQuery q;
+        q.layer = move_layer(*e);
+        if (auto free = Pathfinder::nearest_passable(map_, t, 8, q)) {
             const Vec2F before = e->position;
             e->position = e->prev_position = core::tile_center(*free);
             spatial_.move(u, before, e->position);

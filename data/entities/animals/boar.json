@@ -1,0 +1,16 @@
+{
+  // Neutral: no ataca primero, pero se defiende con fuerza si lo hieren. Mucha comida.
+  "key": "boar",
+  "extends": "_animal_base",
+  "name": "Jabalí",
+  "description": "Se defiende si lo atacas. Da 300 de comida.",
+  "animal": "retaliate",
+  "capabilities": ["move", "attack"],
+  "hp": 60,
+  "speed": 0.95,
+  "attack": { "melee": 5 },
+  "armor": { "melee": 1, "pierce": 2 },
+  "reload": 2.0,
+  "carcass_food": 300,
+  "visual": { "size": 0.27, "color": "#5b3d2b", "label": "Jabalí" }
+}

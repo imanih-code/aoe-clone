@@ -137,7 +137,8 @@ TEST_CASE("Producción: entrenar cuesta, tarda y crea la unidad; cancelar devuel
     const auto tc = g.player(1).buildings.front();
     const data::TypeId villager = registry().type("villager");
     const int32_t food = g.player(1).resources[kFood];
-    const std::size_t units = g.player(1).units.size();
+    const std::size_t units = villagers(g).size();  // las cabras de la base también son unidades: contar aldeanos
+    const int32_t pop = g.player(1).population_current;
 
     auto train = cmd(sim::CommandType::Train, {tc});
     train.type_arg = villager;
@@ -152,8 +153,8 @@ TEST_CASE("Producción: entrenar cuesta, tarda y crea la unidad; cancelar devuel
     CHECK(g.player(1).resources[kFood] == food - 50);
 
     run(g, 25 * sim::kTicksPerSecond + 2);
-    CHECK(g.player(1).units.size() == units + 1);
-    CHECK(g.player(1).population_current == static_cast<int32_t>(units) + 1);
+    CHECK(villagers(g).size() == units + 1);
+    CHECK(g.player(1).population_current == pop + 1);
     CHECK(g.entity(tc)->production.empty());
 }
 
@@ -168,7 +169,7 @@ TEST_CASE("Producción: el punto de reunión manda la unidad nueva allí") {
     train.type_arg = registry().type("villager");
     send(g, train);
     run(g, 40 * sim::kTicksPerSecond);
-    const auto* unit = g.entity(g.player(1).units.back());
+    const auto* unit = g.entity(villagers(g).back());  // el aldeano recién entrenado
     REQUIRE(unit);
     CHECK(core::length(unit->position - rally) < Fixed::from_int(2));
 }

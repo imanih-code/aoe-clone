@@ -230,6 +230,7 @@ void InputController::place_building(const sim::GameState& game, bool keep_placi
     auto cmd = make(sim::CommandType::PlaceBuilding, own_units(game, true));
     cmd.type_arg = placement_->type;
     cmd.tile = placement_->tile;
+    cmd.queued = keep_placing;  // con Shift: varios cimientos, construidos uno tras otro
     pending_.push_back(std::move(cmd));
     if (!keep_placing) placement_.reset();
 }
@@ -247,12 +248,18 @@ void InputController::right_click(sf::Vector2i pixel, const sf::RenderWindow& wi
     const core::Vec2F ground{core::Fixed::from_double(std::clamp(w.x, 0.5f, max_x)), core::Fixed::from_double(std::clamp(w.y, 0.5f, max_y))};
 
     const auto units = own_units(game);
+    // Shift: la orden se añade a la cola de cada unidad (se cumple después de las anteriores)
+    const bool queued = shift_down();
+    auto push = [&](sim::Command cmd, core::Vec2F where) {
+        cmd.queued = queued;
+        pending_.push_back(std::move(cmd));
+        markers_.push_back({render::world_to_iso(where), 0.f});
+    };
     // Ctrl + clic derecho: avanzar atacando lo que haya por el camino
     if (!units.empty() && (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::LControl) || sf::Keyboard::isKeyPressed(sf::Keyboard::Key::RControl))) {
         auto cmd = make(sim::CommandType::AttackMove, units);
         cmd.target_pos = ground;
-        pending_.push_back(std::move(cmd));
-        markers_.push_back({render::world_to_iso(ground), 0.f});
+        push(std::move(cmd), ground);
         return;
     }
     if (units.empty()) {
@@ -276,15 +283,37 @@ void InputController::right_click(sf::Vector2i pixel, const sf::RenderWindow& wi
         if (target && target->resource_node && target->is_complete()) {
             auto cmd = make(sim::CommandType::Gather, units);
             cmd.target = *hit;
-            pending_.push_back(std::move(cmd));
-            markers_.push_back({render::world_to_iso(target->position), 0.f});
+            push(std::move(cmd), target->position);
+            return;
+        }
+        // Animales: los aldeanos cazan (o sacrifican el ganado propio); las tropas atacan
+        const bool animal = target && game.sheet_of(*target).stats.animal != data::AnimalBehavior::None;
+        if (animal && (target->current_player == data::kGaia || target->current_player == local_)) {
+            std::vector<core::EntityHandle> hunters, fighters;
+            for (auto h : units) {
+                (game.sheet_of(*game.entity(h)).stats.has(data::Capability::Gather) ? hunters : fighters).push_back(h);
+            }
+            const bool huntable = game.is_huntable(*target);
+            if (huntable && !hunters.empty()) {
+                auto cmd = make(sim::CommandType::Gather, hunters);
+                cmd.target = *hit;
+                push(std::move(cmd), target->position);
+            } else {
+                fighters.insert(fighters.end(), hunters.begin(), hunters.end());
+            }
+            // El ganado propio no se ataca con tropas: solo se mueven hasta él
+            if (!fighters.empty()) {
+                auto cmd = make(target->current_player == local_ ? sim::CommandType::Move : sim::CommandType::Attack, fighters);
+                cmd.target = *hit;
+                cmd.target_pos = target->position;
+                push(std::move(cmd), target->position);
+            }
             return;
         }
         if (target && target->current_player != local_ && target->current_player != data::kGaia && !target->projectile) {
             auto cmd = make(sim::CommandType::Attack, units);  // los que no pueden atacar se acercan
             cmd.target = *hit;
-            pending_.push_back(std::move(cmd));
-            markers_.push_back({render::world_to_iso(target->position), 0.f});
+            push(std::move(cmd), target->position);
             return;
         }
         if (target && target->current_player == local_ && !target->is_complete()) {
@@ -292,20 +321,20 @@ void InputController::right_click(sf::Vector2i pixel, const sf::RenderWindow& wi
             if (!builders.empty()) {
                 auto cmd = make(sim::CommandType::Build, std::move(builders));
                 cmd.target = *hit;
-                pending_.push_back(std::move(cmd));
-                markers_.push_back({render::world_to_iso(target->position), 0.f});
+                push(std::move(cmd), target->position);
                 return;
             }
         }
     }
-    order_move_world(ground, game);
+    order_move_world(ground, game, queued);
 }
 
-void InputController::order_move_world(core::Vec2F target, const sim::GameState& game) {
+void InputController::order_move_world(core::Vec2F target, const sim::GameState& game, bool queued) {
     auto actors = own_units(game);
     if (actors.empty()) return;
     auto cmd = make(sim::CommandType::Move, std::move(actors));
     cmd.target_pos = target;
+    cmd.queued = queued;
     pending_.push_back(std::move(cmd));
     markers_.push_back({render::world_to_iso(target), 0.f});
 }

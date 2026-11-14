@@ -30,13 +30,21 @@
     { "type": "gold_mine", "count": [7, 7], "distance": [10, 13] },
     { "type": "stone_mine", "count": [5, 5], "distance": [11, 14] },
     { "type": "gold_mine", "count": [4, 4], "distance": [15, 18] },
-    { "type": "tree", "count": [30, 45], "distance": [11, 14] }
+    { "type": "tree", "count": [30, 45], "distance": [11, 14] },
+    { "type": "goat", "count": [4, 4], "distance": [6, 8] },
+    { "type": "deer", "count": [3, 4], "distance": [15, 19] },
+    { "type": "boar", "count": [1, 2], "distance": [13, 16] }
   ],
 
   "map_wide": [
     { "type": "tree", "clusters": 22, "size": [15, 45], "min_distance_from_start": 15 },
     { "type": "gold_mine", "clusters": 4, "size": [4, 7], "min_distance_from_start": 20 },
     { "type": "stone_mine", "clusters": 3, "size": [4, 5], "min_distance_from_start": 20 },
-    { "type": "berry_bush", "clusters": 2, "size": [4, 6], "min_distance_from_start": 20 }
+    { "type": "berry_bush", "clusters": 2, "size": [4, 6], "min_distance_from_start": 20 },
+    { "type": "deer", "clusters": 5, "size": [3, 4], "min_distance_from_start": 18 },
+    { "type": "wolf", "clusters": 5, "size": [1, 2], "min_distance_from_start": 24 },
+    { "type": "boar", "clusters": 3, "size": [1, 1], "min_distance_from_start": 18 },
+    { "type": "shore_fish", "clusters": 8, "size": [2, 3], "min_distance_from_start": 14 },
+    { "type": "deep_fish", "clusters": 5, "size": [1, 2], "min_distance_from_start": 16 }
   ]
 }

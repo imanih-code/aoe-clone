@@ -12,6 +12,7 @@
 #include "core/fixed.hpp"
 #include "data/ids.hpp"
 #include "sim/actions/action.hpp"
+#include "sim/commands/command.hpp"
 
 namespace sim {
 
@@ -52,6 +53,14 @@ struct ProjectileData {
     data::TypeId source_type;
 };
 
+// Orden pendiente en la cola de una unidad (Shift + orden). Se convierte en acción al acabar la anterior.
+struct Order {
+    CommandType type = CommandType::Move;
+    core::EntityHandle target;
+    core::Vec2F pos;
+    data::TypeId type_arg;
+};
+
 struct SpawnableEntity {
     core::EntityHandle self;
     data::TypeId type;
@@ -64,6 +73,7 @@ struct SpawnableEntity {
     core::Vec2F prev_position;  // posición al inicio del tick (interpolación del render)
     core::TilePos anchor;       // esquina del footprint (edificios y recursos)
     int32_t hp = 1;
+    uint32_t last_damaged_tick = std::numeric_limits<uint32_t>::max();  // animales: huir un rato tras un golpe
 
     // ─── Componentes opcionales (architecture.md, Diagrama 5) ────────────
     std::optional<ResourceNodeData> resource_node;
@@ -75,6 +85,7 @@ struct SpawnableEntity {
 
     // ─── Acción en curso ─────────────────────────────────────────────────
     std::unique_ptr<IAction> action;
+    std::deque<Order> orders;  // cola de órdenes (Shift), en orden de llegada
 
     bool is_converted() const { return original_player != current_player; }
     bool is_complete() const { return !construction.has_value(); }

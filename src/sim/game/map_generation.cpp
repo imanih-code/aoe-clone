@@ -162,7 +162,10 @@ void GameState::place_player_bases() {
 }
 
 int GameState::place_cluster(data::TypeId type, core::TilePos origin, int count, int min_dist_from_start) {
-    auto start_tile = Pathfinder::nearest_passable(map_, origin, 6);
+    // Peces: el grupo empieza en el agua; el resto (incluidos los animales), en tierra
+    PathQuery q;
+    if (data_.sheet(type).stats.placement != data::PlacementRule::Land) q.layer = MoveLayer::Water;
+    auto start_tile = Pathfinder::nearest_passable(map_, origin, q.layer == MoveLayer::Water ? 20 : 6, q);
     if (!start_tile) return 0;
 
     std::vector<uint8_t> visited(static_cast<std::size_t>(map_.width() * map_.height()), 0);

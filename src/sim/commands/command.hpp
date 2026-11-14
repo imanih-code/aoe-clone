@@ -35,6 +35,7 @@ struct Command {
     data::TypeId type_arg;
     core::TilePos tile;
     int32_t index = 0;
+    bool queued = false;  // Shift: se añade a la cola de cada unidad en vez de sustituir la orden actual
 };
 
 }  // namespace sim

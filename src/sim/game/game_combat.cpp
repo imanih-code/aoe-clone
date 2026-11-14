@@ -166,9 +166,30 @@ void GameState::complete_research(data::PlayerId p, data::TechId t) {
 
 bool GameState::is_enemy(const SpawnableEntity& a, const SpawnableEntity& b) const {
     if (a.current_player == b.current_player) return false;
-    if (a.current_player == data::kGaia || b.current_player == data::kGaia) return false;
     if (b.projectile || b.hp <= 0) return false;
+    const auto animal = [&](const SpawnableEntity& x) { return sheet_of(x).stats.animal; };
+    if (a.current_player == data::kGaia) {
+        // Un lobo ve enemigos en todas las unidades de los jugadores; un jabalí, en quien lo hiere
+        const auto beh = animal(a);
+        return (beh == data::AnimalBehavior::Aggressive || beh == data::AnimalBehavior::Retaliate) && sheet_of(b).is_unit();
+    }
+    if (b.current_player == data::kGaia) {
+        // Las tropas atacan solas a los lobos (no a ciervos ni jabalíes: eso es cazar, se ordena)
+        return animal(b) == data::AnimalBehavior::Aggressive;
+    }
     return true;
+}
+
+bool GameState::can_target(const SpawnableEntity& a, const SpawnableEntity& b) const {
+    if (is_enemy(a, b)) return true;
+    if (b.projectile || b.hp <= 0 || a.current_player == data::kGaia) return false;
+    // Cazar: cualquier animal de Gaia, y también el ganado propio (sacrificarlo para comer)
+    return sheet_of(b).stats.animal != data::AnimalBehavior::None && (b.current_player == data::kGaia || b.current_player == a.current_player);
+}
+
+bool GameState::is_huntable(const SpawnableEntity& e) const {
+    const auto& s = sheet_of(e);
+    return s.is_unit() && s.stats.carcass_food > 0 && e.hp > 0;
 }
 
 Fixed GameState::distance_to(const SpawnableEntity& from, const SpawnableEntity& to) const {
@@ -206,9 +227,12 @@ core::EntityHandle GameState::find_enemy_near(const SpawnableEntity& e, int radi
     const int64_t max_d = static_cast<int64_t>(r.raw) * r.raw;
     for (core::EntityHandle h : found) {
         const SpawnableEntity* o = entities_.get(h);
-        if (!o || !is_enemy(e, *o) || !is_visible_to(e.current_player, *o)) continue;
+        if (!o || !is_enemy(e, *o)) continue;
+        // Los animales "ven" a su alrededor sin niebla; los jugadores solo lo que es visible para ellos
+        if (e.current_player != data::kGaia && !is_visible_to(e.current_player, *o)) continue;
         const auto& os = sheet_of(*o);
         if (!os.is_unit() && !os.is_building()) continue;
+        if (e.current_player == data::kGaia && !os.is_unit()) continue;  // los lobos no atacan edificios
         const int64_t d = dist_sq_raw(o->position, e.position);
         if (d > max_d) continue;
         const bool is_building = os.is_building();
@@ -272,19 +296,36 @@ void GameState::resolve_damage() {
         SpawnableEntity* victim = entities_.get(ev.target);
         if (!victim || victim->hp <= 0) continue;
         victim->hp -= ev.amount;
+        victim->last_damaged_tick = tick_;
         if (victim->hp <= 0) {
             victim->hp = 0;
             victim->action.reset();
+            victim->orders.clear();
             players_[ev.attacker_player].kills_by_type[victim->type]++;
             players_[victim->current_player].losses_by_type[victim->type]++;
             request_despawn(ev.target);
+            // Un animal cazado deja carne donde cayó
+            const int32_t food = sheet_of(*victim).stats.carcass_food;
+            if (food > 0 && carcass_type_) {
+                SpawnRequest carcass;
+                carcass.type = *carcass_type_;
+                carcass.owner = data::kGaia;
+                carcass.tile = core::tile_of(victim->position);
+                carcass.resource_amount = food;
+                carcass.nearby_ok = true;
+                pending_spawns_.push_back(carcass);
+            }
             continue;
         }
-        // Represalia: una unidad militar ociosa responde a quien la ataca
+        // Represalia: una unidad militar ociosa responde a quien la ataca, y un jabalí
+        // herido se revuelve aunque esté huyendo o deambulando
         const SpawnableEntity* attacker = entities_.get(ev.source);
-        if (!victim->action && attacker && attacker->hp > 0 && sheet_of(*victim).can_attack() && stats_of(*victim).aggressive &&
-            is_enemy(*victim, *attacker)) {
+        if (!attacker || attacker->hp <= 0 || !sheet_of(*victim).can_attack() || !is_enemy(*victim, *attacker)) continue;
+        const bool retaliates = sheet_of(*victim).stats.animal == data::AnimalBehavior::Retaliate;
+        const bool busy = victim->action && victim->action->kind() == ActionKind::Attack;
+        if ((retaliates && !busy) || (!victim->action && stats_of(*victim).aggressive)) {
             victim->action = std::make_unique<AttackAction>(ev.source, true);
+            victim->orders.clear();
         }
     }
     damage_.clear();
@@ -293,7 +334,8 @@ void GameState::resolve_damage() {
 void GameState::auto_attack_system() {
     // Cada entidad mira a su alrededor una vez cada 8 ticks (escalonado por índice)
     entities_.for_each([&](core::EntityHandle h, SpawnableEntity& e) {
-        if ((h.index + tick_) % 8 != 0 || e.action || e.hp <= 0 || e.construction || e.current_player == data::kGaia) return;
+        if ((h.index + tick_) % 8 != 0 || e.action || e.hp <= 0 || e.construction || e.projectile) return;
+        if (e.current_player == data::kGaia && sheet_of(e).stats.animal != data::AnimalBehavior::Aggressive) return;  // de Gaia, solo los lobos
         const auto& sheet = sheet_of(e);
         if (!sheet.can_attack()) return;
         const auto& s = stats_of(e);
@@ -353,7 +395,9 @@ void GameState::victory_system() {
             // Derrotado = sin unidades ni edificios (las bajas pendientes de este tick ya cuentan)
             const auto alive_entity = [&](core::EntityHandle h) {
                 const SpawnableEntity* e = entities_.get(h);
-                return e && e->hp > 0 && std::find(pending_despawns_.begin(), pending_despawns_.end(), h) == pending_despawns_.end();
+                // El ganado no cuenta: sin unidades ni edificios de verdad, se pierde
+                return e && e->hp > 0 && sheet_of(*e).stats.animal == data::AnimalBehavior::None &&
+                       std::find(pending_despawns_.begin(), pending_despawns_.end(), h) == pending_despawns_.end();
             };
             const bool any = std::any_of(ps.units.begin(), ps.units.end(), alive_entity) ||
                              std::any_of(ps.buildings.begin(), ps.buildings.end(), alive_entity);

@@ -62,6 +62,7 @@ add_library(sim STATIC
     src/sim/game/map_generation.cpp
     src/sim/actions/actions.cpp
     src/sim/game/game_combat.cpp
+    src/sim/game/game_animals.cpp
     src/sim/modifiers/modifier_resolver.cpp
     src/sim/ai/scripted_ai.cpp
     src/sim/replay/replay.cpp
@@ -106,6 +107,7 @@ if(AOE_BUILD_TESTS)
         tests/test_economy.cpp
         tests/test_combat.cpp
         tests/test_ai.cpp
+        tests/test_wildlife.cpp
     )
     target_include_directories(sim_tests PRIVATE ${doctest_SOURCE_DIR}/doctest)
     target_link_libraries(sim_tests PRIVATE sim aoe_warnings)

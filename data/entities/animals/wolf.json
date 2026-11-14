@@ -1,0 +1,16 @@
+{
+  // Hostil: ataca a cualquier unidad que vea. No da comida.
+  "key": "wolf",
+  "extends": "_animal_base",
+  "name": "Lobo",
+  "description": "Ataca sin aviso. No da comida.",
+  "animal": "aggressive",
+  "aggressive": true,
+  "capabilities": ["move", "attack"],
+  "hp": 30,
+  "speed": 1.25,
+  "sight": 5,
+  "attack": { "melee": 4 },
+  "reload": 1.5,
+  "visual": { "size": 0.23, "color": "#7b7c86", "label": "Lobo" }
+}

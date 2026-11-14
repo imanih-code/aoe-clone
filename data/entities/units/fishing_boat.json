@@ -1,0 +1,17 @@
+{
+  "key": "fishing_boat",
+  "extends": "_unit_base",
+  "name": "Barca de pesca",
+  "description": "Pesca en aguas profundas y lleva la comida al muelle.",
+  "classes": ["unit", "ship", "civilian"],
+  "capabilities": ["move", "gather"],
+  "naval": true,
+  "hp": 60,
+  "speed": 1.1,
+  "radius": 0.35,
+  "sight": 5,
+  "cost": { "wood": 75 },
+  "train_time": 40,
+  "gather": { "carry": 15, "rates": { "food": 0.5 } },
+  "visual": { "shape": "boat", "size": 0.32, "label": "Barca" }
+}

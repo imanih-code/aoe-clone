@@ -1,0 +1,12 @@
+{
+  // En el agua pegada a la orilla: los aldeanos pescan desde tierra.
+  "key": "shore_fish",
+  "name": "Peces de orilla",
+  "kind": "resource",
+  "classes": ["resource_node"],
+  "hp": 1,
+  "placement": "shore",
+  "gather_slots": 3,
+  "resource": { "type": "food", "amount": 200 },
+  "visual": { "shape": "fish", "size": 0.3, "color": "#bfe0f2", "label": "Peces" }
+}

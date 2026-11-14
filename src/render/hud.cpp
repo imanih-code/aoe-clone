@@ -86,7 +86,8 @@ void Hud::draw(sf::RenderWindow& window, const sim::GameState& game, const HudIn
         const char* lines[] = {
             "Clic izq.: seleccionar   ·   arrastrar: selección por caja   ·   Shift: añadir",
             "Doble clic: todas las del mismo tipo en pantalla   ·   .: siguiente aldeano ocioso",
-            "Clic der.: mover · recolectar (recurso) · construir (obra) · atacar (enemigo)",
+            "Clic der.: mover · recolectar · cazar (animal) · construir (obra) · atacar (enemigo)",
+            "Shift + orden: se añade a la cola (la ruta se ve con puntos amarillos)",
             "Clic der. con un edificio seleccionado: punto de reunión",
             "Panel de órdenes: clic o tecla Q W E R T / A S D F G / Z X C V B",
             "Colocar edificio: clic izq. (Shift = varios)   ·   clic der. o Esc: cancelar",
@@ -94,7 +95,7 @@ void Hud::draw(sf::RenderWindow& window, const sim::GameState& game, const HudIn
             "Ctrl + clic der.: avanzar atacando   ·   Minimapa: clic o arrastrar para mover la cámara",
             "+ / -: velocidad   ·   P: pausa   ·   L: etiquetas   ·   F2: cuadrícula   ·   H: ocultar ayuda",
         };
-        sf::RectangleShape bg({600.f, 184.f});
+        sf::RectangleShape bg({600.f, 203.f});
         bg.setPosition({10.f, 38.f});
         bg.setFillColor(sf::Color(0, 0, 0, 140));
         window.draw(bg);

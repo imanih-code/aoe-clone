@@ -1,0 +1,13 @@
+{
+  // Base de los animales de Gaia. Al morir, los que tienen "carcass_food" dejan carne para recolectar.
+  "key": "_animal_base",
+  "abstract": true,
+  "kind": "unit",
+  "classes": ["unit", "animal"],
+  "capabilities": ["move"],
+  "radius": 0.2,
+  "sight": 4,
+  "population": 0,
+  "armor": { "melee": 0, "pierce": 0 },
+  "visual": { "shape": "animal", "size": 0.24 }
+}

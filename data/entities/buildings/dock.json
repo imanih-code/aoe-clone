@@ -1,0 +1,15 @@
+{
+  // Se construye en el agua, tocando la orilla. Entrena barcas y acepta comida.
+  "key": "dock",
+  "extends": "_building_base",
+  "name": "Muelle",
+  "description": "En el agua junto a la orilla. Entrena barcas de pesca y acepta comida.",
+  "hp": 1500,
+  "footprint": [2, 2],
+  "placement": "shore",
+  "dropoff": ["food"],
+  "trains": ["fishing_boat"],
+  "cost": { "wood": 150 },
+  "build_time": 35,
+  "visual": { "height": 0.45, "color": "#8b6a43", "player_color": false, "label": "Muelle" }
+}

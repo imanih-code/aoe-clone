@@ -77,6 +77,17 @@ Principio: **vertical slice primero**. Un aldeano que corta madera de punta a pu
 
 > **Estado (2026-11-14)**: casi hecha. Niebla por jugador (visible / explorado) que la simulación respeta: no se ataca lo que no se ve ni se construye sin explorar. Niebla con bordes suaves, minimapa con encuadre clicable, IA por guion (economía, casas, depósitos, granjas, cuartel, subir de edad, oleadas con avance atacando, defensa), victoria por conquista con pantalla de fin, replays con hash cada 100 ticks (`--replay`), velocidad x1–x8, pausa y modo espectador. Se añadió la **granja** (comida renovable): sin ella la comida se agotaba con las bayas. 36 tests. Pendiente: verificar una partida completa hasta la victoria (en 20 minutos de IA contra IA hay combates, 14 bajas, pero ninguna gana), y una IA que se adapte (hoy siempre hace lo mismo).
 
+## Fase 5b — Mundo vivo (añadida a petición)
+
+- Granjas de 3×3 transitables: un granjero que va de casilla en casilla.
+- Plazas de recolección por recurso: si está lleno, ir a otro cercano.
+- Fauna: ganado domesticable, presas que huyen, lobos hostiles, jabalíes que se defienden; carne al morir.
+- Agua: peces de orilla (aldeanos), bancos profundos, muelle y barca de pesca.
+- Pathfinding con niebla: lo no explorado se supone transitable; replanificar al descubrir obstáculos.
+- Cola de órdenes con Shift y aldeanos con iniciativa (trabajar el depósito o la granja que acaban de construir).
+
+> **Estado (2026-11-14)**: hecha (`architecture.md` §11.10). 46 tests. Pendiente: barcos de guerra y transporte, que los aldeanos huyan de los lobos, y que la IA use el muelle.
+
 ## Fase 6 — Mutabilidad
 
 Todo `mutability.md`: `CapabilitySet` dinámico, `ActionConfig` como `std::variant`, `ObjectModifier`, conversión (monjes), garrison, morph, triggers. Los 4 casos de uso como tests de integración.

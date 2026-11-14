@@ -4,6 +4,7 @@
   "kind": "resource",
   "classes": ["resource_node", "bush"],
   "hp": 1,
+  "gather_slots": 3,
   "resource": { "type": "food", "amount": 125 },
   "visual": { "shape": "bush", "size": 0.36, "color": "#b0306a", "label": "Bayas" }
 }

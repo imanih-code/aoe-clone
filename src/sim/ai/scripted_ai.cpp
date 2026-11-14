@@ -230,7 +230,7 @@ void ScriptedAI::buildings(const GameState& game, const View& v, std::vector<Com
         return it == v.building_count.end() ? 0 : it->second;
     };
     auto near_resource = [&](data::ResourceTag r) -> std::optional<core::TilePos> {
-        const core::EntityHandle n = game.nearest_resource(r, core::tile_center(v.base), 25, me_);
+        const core::EntityHandle n = game.nearest_resource(r, core::tile_center(v.base), 25, me_, false, MoveLayer::Land);
         const SpawnableEntity* e = game.entity(n);
         if (!e || !game.is_known_to(me_, *e)) return std::nullopt;
         return core::tile_of(e->position);
@@ -353,6 +353,7 @@ void ScriptedAI::military(const GameState& game, const View& v, std::vector<Comm
 void ScriptedAI::assign_idle_villagers(const GameState& game, const View& v, std::vector<Command>& out) {
     if (v.idle_villagers.empty()) return;
     farm_placed_ = false;
+    std::erase_if(hunted_, [&](core::EntityHandle h) { return !game.entity(h); });
     auto counts = v.gatherers;
     const int total = static_cast<int>(v.villagers.size());
     for (core::EntityHandle h : v.idle_villagers) {
@@ -365,7 +366,17 @@ void ScriptedAI::assign_idle_villagers(const GameState& game, const View& v, std
         const SpawnableEntity* villager = game.entity(h);
         for (std::size_t r : order) {
             if (kRatio[r] == 0 && r != order.back()) continue;
-            const core::EntityHandle node = game.nearest_resource(static_cast<data::ResourceTag>(r), villager->position, 30, me_);
+            core::EntityHandle node = game.nearest_resource(static_cast<data::ResourceTag>(r), villager->position, 30, me_, true, MoveLayer::Land);
+            // Comida: primero el ganado propio (se sacrifica junto a la base), si nadie va ya a por él
+            if (r == data::index_of(data::ResourceTag::Food)) {
+                for (core::EntityHandle u : v.ps->units) {
+                    const SpawnableEntity* goat = game.entity(u);
+                    if (!goat || !game.is_huntable(*goat) || std::find(hunted_.begin(), hunted_.end(), u) != hunted_.end()) continue;
+                    node = u;
+                    hunted_.push_back(u);
+                    break;
+                }
+            }
             const SpawnableEntity* n = game.entity(node);
             if (!n || !game.is_known_to(me_, *n)) {
                 // Sin bayas a mano: plantar una granja cerca de la base (una por think)

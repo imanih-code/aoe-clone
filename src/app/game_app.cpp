@@ -220,6 +220,19 @@ void GameApp::start_demo() {
                 break;
             }
         }
+        // Y después (encolada con Shift) una granja junto a la plaza: al terminarla, la trabaja él mismo
+        const data::TypeId farm = data_.type("farm");
+        for (int r = 3; r < 10; ++r) {
+            const core::TilePos t{s.x + 1, s.y + r};
+            if (game_->can_place(farm, t) && game_->visibility(me_id).explored(t) && game_->visibility(me_id).explored({t.x + 2, t.y + 2})) {
+                auto c = command(sim::CommandType::PlaceBuilding, {villagers[2]});
+                c.type_arg = farm;
+                c.tile = t;
+                c.queued = true;
+                input_.submit(std::move(c));
+                break;
+            }
+        }
     }
     if (!others.empty()) {
         auto c = command(sim::CommandType::Move, others);

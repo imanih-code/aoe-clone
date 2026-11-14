@@ -1,0 +1,12 @@
+{
+  // Domesticable: pasa a ser del primer jugador que se acerca. Se puede llevar a la base y sacrificar.
+  "key": "goat",
+  "extends": "_animal_base",
+  "name": "Cabra",
+  "description": "Ganado: se queda con el primero que llega. Da 100 de comida.",
+  "animal": "domestic",
+  "hp": 8,
+  "speed": 0.7,
+  "carcass_food": 100,
+  "visual": { "size": 0.2, "color": "#e6e1d3", "label": "Cabra" }
+}

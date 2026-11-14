@@ -1,0 +1,11 @@
+{
+  // Lo que queda de un animal cazado. La cantidad la fija el animal ("carcass_food").
+  "key": "carcass",
+  "name": "Carne",
+  "kind": "resource",
+  "classes": ["resource_node"],
+  "hp": 1,
+  "gather_slots": 6,
+  "resource": { "type": "food", "amount": 100 },
+  "visual": { "shape": "carcass", "size": 0.25, "color": "#8c3b2c", "label": "Carne" }
+}

@@ -57,8 +57,8 @@ void Pathfinder::prepare(const TileMap& map) {
     }
 }
 
-std::optional<core::TilePos> Pathfinder::nearest_passable(const TileMap& map, core::TilePos t, int max_radius) {
-    if (map.is_passable(t)) return t;
+std::optional<core::TilePos> Pathfinder::nearest_passable(const TileMap& map, core::TilePos t, int max_radius, const PathQuery& query) {
+    if (query.believes_passable(map, t)) return t;
     // Anillos crecientes alrededor de t; dentro de cada anillo, orden fijo.
     for (int r = 1; r <= max_radius; ++r) {
         std::optional<core::TilePos> best;
@@ -67,7 +67,7 @@ std::optional<core::TilePos> Pathfinder::nearest_passable(const TileMap& map, co
             for (int dx = -r; dx <= r; ++dx) {
                 if (std::max(std::abs(dx), std::abs(dy)) != r) continue;
                 const core::TilePos c{t.x + dx, t.y + dy};
-                if (!map.is_passable(c)) continue;
+                if (!query.believes_passable(map, c)) continue;
                 const int32_t d = dx * dx + dy * dy;
                 if (!best || d < best_d) {
                     best = c;
@@ -80,9 +80,9 @@ std::optional<core::TilePos> Pathfinder::nearest_passable(const TileMap& map, co
     return std::nullopt;
 }
 
-std::optional<Pathfinder::Result> Pathfinder::find(const TileMap& map, core::TilePos start, core::TilePos goal,
+std::optional<Pathfinder::Result> Pathfinder::find(const TileMap& map, core::TilePos start, core::TilePos goal, const PathQuery& query,
                                                     int max_expansions) {
-    auto resolved = nearest_passable(map, goal);
+    auto resolved = nearest_passable(map, goal, 16, query);
     if (!resolved) return std::nullopt;
     if (!map.in_bounds(start)) return std::nullopt;
 
@@ -130,9 +130,9 @@ std::optional<Pathfinder::Result> Pathfinder::find(const TileMap& map, core::Til
 
         for (const Dir& d : kDirs) {
             const core::TilePos n{p.x + d.dx, p.y + d.dy};
-            if (!map.is_passable(n)) continue;
+            if (!query.believes_passable(map, n)) continue;
             const bool diagonal = d.dx != 0 && d.dy != 0;
-            if (diagonal && (!map.is_passable(p.x + d.dx, p.y) || !map.is_passable(p.x, p.y + d.dy))) continue;
+            if (diagonal && (!query.believes_passable(map, {p.x + d.dx, p.y}) || !query.believes_passable(map, {p.x, p.y + d.dy}))) continue;
             const int32_t ni = idx(n);
             if (closed_[ni] == stamp_) continue;
             const int32_t g = g_[node.index] + (diagonal ? kDiagonal : kStraight);
@@ -153,7 +153,7 @@ std::optional<Pathfinder::Result> Pathfinder::find(const TileMap& map, core::Til
     return result;
 }
 
-bool line_is_clear(const TileMap& map, core::Vec2F a, core::Vec2F b) {
+bool line_is_clear(const TileMap& map, core::Vec2F a, core::Vec2F b, const PathQuery& query) {
     const core::Vec2F d = b - a;
     const core::Fixed len = core::length(d);
     const int steps = std::max(1, (len * core::Fixed::from_int(4)).floor_int() + 1);
@@ -164,7 +164,7 @@ bool line_is_clear(const TileMap& map, core::Vec2F a, core::Vec2F b) {
             core::Fixed::from_raw(a.y.raw + static_cast<int32_t>(static_cast<int64_t>(d.y.raw) * i / steps))};
         const core::TilePos t = core::tile_of(p);
         if (t == start_tile) continue;  // la unidad puede estar dentro de un tile bloqueado
-        if (!map.is_passable(t)) return false;
+        if (!query.believes_passable(map, t)) return false;
     }
     return true;
 }

@@ -1,0 +1,12 @@
+{
+  // Aguas profundas: solo los alcanzan las barcas de pesca.
+  "key": "deep_fish",
+  "name": "Banco de peces",
+  "kind": "resource",
+  "classes": ["resource_node"],
+  "hp": 1,
+  "placement": "water",
+  "gather_slots": 4,
+  "resource": { "type": "food", "amount": 400 },
+  "visual": { "shape": "fish", "size": 0.42, "color": "#e3f2fb", "label": "Banco de peces" }
+}

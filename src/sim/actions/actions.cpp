@@ -24,9 +24,13 @@ ActionStatus MoveAction::tick(SpawnableEntity& self, GameState& game) {
     return ActionStatus::Running;
 }
 
-// ─── Recolectar: ir → recolectar → depositar → volver ───────────────────────
+// ─── Recolectar: ir → (cazar) → recolectar → depositar → volver ─────────────
+
+GatherAction::GatherAction(core::EntityHandle target, data::ResourceTag resource) : target_(target), resource_(resource) {}
+GatherAction::~GatherAction() = default;
 
 const char* GatherAction::label() const {
+    if (phase_ == Phase::Hunting) return "Cazando";
     switch (resource_) {
     case data::ResourceTag::Food: return "Recolectando comida";
     case data::ResourceTag::Wood: return "Talando madera";
@@ -39,21 +43,43 @@ const char* GatherAction::label() const {
 ActionStatus GatherAction::tick(SpawnableEntity& self, GameState& game) {
     switch (phase_) {
     case Phase::ToResource: return to_resource(self, game);
+    case Phase::Hunting: return hunting(self, game);
     case Phase::Gathering: return gathering(self, game);
     case Phase::ToDropoff: return to_dropoff(self, game);
     }
     return ActionStatus::Done;
 }
 
-bool GatherAction::retarget(SpawnableEntity& self, GameState& game) {
-    target_ = game.nearest_resource(resource_, has_spot_ ? last_spot_ : self.position, 10, self.current_player);
+bool GatherAction::retarget(SpawnableEntity& self, GameState& game, core::EntityHandle exclude) {
+    target_ = game.nearest_resource(resource_, has_spot_ ? last_spot_ : self.position, 10, self.current_player,
+                                    /*skip_full=*/true, game.move_layer(self), exclude);
     plan_.reset();
+    field_spot_.reset();
     return static_cast<bool>(target_);
+}
+
+StepResult GatherAction::follow(SpawnableEntity& self, GameState& game, const SpawnableEntity& target) {
+    if (!plan_) {
+        plan_ = game.plan_path_to(self, target);
+        if (!plan_) return StepResult::Blocked;
+    }
+    const StepResult r = game.step_along(self, *plan_);
+    if (r != StepResult::Moving) plan_.reset();
+    return r;
 }
 
 ActionStatus GatherAction::to_resource(SpawnableEntity& self, GameState& game) {
     const SpawnableEntity* node = game.entity(target_);
+    if (node && !node->resource_node && game.is_huntable(*node)) {
+        phase_ = Phase::Hunting;  // un animal: primero hay que cazarlo
+        return ActionStatus::Running;
+    }
     if (!node || !node->resource_node || node->resource_node->amount_remaining <= 0) {
+        if (wait_ > 0) {  // la carne del animal cazado aparece al final del tick
+            --wait_;
+            retarget(self, game);
+            return ActionStatus::Running;
+        }
         if (!retarget(self, game)) {
             // No queda nada cerca: entregar lo que lleve y quedarse ocioso
             if (self.carry.amount > Fixed{}) {
@@ -65,32 +91,56 @@ ActionStatus GatherAction::to_resource(SpawnableEntity& self, GameState& game) {
         node = game.entity(target_);
     }
 
-    if (game.in_reach(self, *node)) {
+    // En una granja hay que estar DENTRO del campo para empezar; en lo demás, basta con estar al lado
+    const bool arrived = game.sheet_of(*node).stats.walkable ? game.distance_to(self, *node) == Fixed{} : game.in_reach(self, *node);
+    if (arrived) {
+        // ¿Hay sitio? Si otros lo ocupan todo, probar otro cercano del mismo tipo; si no hay, esperar.
+        if (game.gatherers_on(target_) >= game.stats_of(*node).gather_slots) {
+            const core::EntityHandle full = target_;
+            if (!retarget(self, game, full)) target_ = full;
+            return ActionStatus::Running;
+        }
         phase_ = Phase::Gathering;
+        game.claim_gather(target_);
         last_spot_ = node->position;
         has_spot_ = true;
         plan_.reset();
+        field_spot_.reset();
         stuck_ = 0;
         return ActionStatus::Running;
     }
 
-    if (!plan_) {
-        plan_ = game.plan_path_to(self, *node);
-        if (!plan_) {  // inaccesible: probar con otro
-            target_ = {};
-            return ++stuck_ > 4 ? ActionStatus::Done : ActionStatus::Running;
-        }
-    }
-    switch (game.step_along(self, *plan_)) {
+    switch (follow(self, game, *node)) {
     case StepResult::Moving: break;
     case StepResult::Arrived:
     case StepResult::Blocked:
-        plan_.reset();
-        if (++stuck_ > 4) {
-            target_ = {};
+        if (++stuck_ > 4) {  // inaccesible: probar con otro
+            const core::EntityHandle bad = target_;
             stuck_ = 0;
+            if (!retarget(self, game, bad)) return ActionStatus::Done;
         }
         break;
+    }
+    return ActionStatus::Running;
+}
+
+ActionStatus GatherAction::hunting(SpawnableEntity& self, GameState& game) {
+    const SpawnableEntity* prey = game.entity(target_);
+    if (!prey || prey->hp <= 0) {
+        // Abatido: la carne aparece al final de este tick donde cayó el animal
+        phase_ = Phase::ToResource;
+        target_ = {};
+        wait_ = 3;
+        hunt_.reset();
+        plan_.reset();
+        return ActionStatus::Running;
+    }
+    last_spot_ = prey->position;
+    has_spot_ = true;
+    if (!hunt_) hunt_ = std::make_unique<AttackAction>(target_, false);
+    if (hunt_->tick(self, game) == ActionStatus::Done) {
+        hunt_.reset();
+        return ActionStatus::Done;  // se escapó o no se puede alcanzar
     }
     return ActionStatus::Running;
 }
@@ -100,6 +150,22 @@ ActionStatus GatherAction::gathering(SpawnableEntity& self, GameState& game) {
     if (!node || !node->resource_node || node->resource_node->amount_remaining <= 0 || !game.in_reach(self, *node)) {
         phase_ = Phase::ToResource;
         return ActionStatus::Running;
+    }
+
+
+    // Granja (recurso transitable): trabajar una casilla al azar y, al rato, cambiar a otra
+    const auto& node_sheet = game.sheet_of(*node);
+    if (node_sheet.stats.walkable) {
+        if (!field_spot_) {
+            const int w = node_sheet.stats.footprint_w, h = node_sheet.stats.footprint_h;
+            const auto cell = static_cast<int32_t>(game.random(static_cast<uint32_t>(w * h)));
+            field_spot_ = core::tile_center({node->anchor.x + cell % w, node->anchor.y + cell / w});
+            plan_ = MovePlan{{*field_spot_}, 0};
+        }
+        if (plan_ && !plan_->done()) {
+            if (game.step_along(self, *plan_) == StepResult::Moving) return ActionStatus::Running;
+            plan_.reset();
+        }
     }
 
     // Cambiar de recurso tira lo que se llevaba
@@ -117,6 +183,11 @@ ActionStatus GatherAction::gathering(SpawnableEntity& self, GameState& game) {
         }
         remaining -= gained;
         if (remaining <= 0) game.request_despawn(node->self);
+        field_gained_ += gained;
+        if (node_sheet.stats.walkable && field_gained_ >= 3) {  // a otra casilla del campo
+            field_gained_ = 0;
+            field_spot_.reset();
+        }
     }
 
     if (self.carry.amount >= Fixed::from_int(stats.carry_capacity)) {
@@ -124,6 +195,7 @@ ActionStatus GatherAction::gathering(SpawnableEntity& self, GameState& game) {
         phase_ = Phase::ToDropoff;
         dropoff_ = {};
         plan_.reset();
+        field_spot_.reset();
     } else if (node->resource_node->amount_remaining <= 0) {
         phase_ = Phase::ToResource;
     }
@@ -133,7 +205,7 @@ ActionStatus GatherAction::gathering(SpawnableEntity& self, GameState& game) {
 ActionStatus GatherAction::to_dropoff(SpawnableEntity& self, GameState& game) {
     SpawnableEntity* drop = game.entity_mut(dropoff_);
     if (!drop || !drop->is_complete()) {
-        dropoff_ = game.nearest_dropoff(self.current_player, self.carry.resource, self.position);
+        dropoff_ = game.nearest_dropoff(self.current_player, self.carry.resource, self.position, game.move_layer(self));
         plan_.reset();
         drop = game.entity_mut(dropoff_);
         if (!drop) return ActionStatus::Done;  // no hay dónde depositar: se queda con la carga
@@ -148,15 +220,10 @@ ActionStatus GatherAction::to_dropoff(SpawnableEntity& self, GameState& game) {
         return ActionStatus::Running;
     }
 
-    if (!plan_) {
-        plan_ = game.plan_path_to(self, *drop);
-        if (!plan_) return ActionStatus::Done;
-    }
-    switch (game.step_along(self, *plan_)) {
+    switch (follow(self, game, *drop)) {
     case StepResult::Moving: break;
     case StepResult::Arrived:
     case StepResult::Blocked:
-        plan_.reset();
         if (++stuck_ > 6) return ActionStatus::Done;
         break;
     }
@@ -168,7 +235,7 @@ ActionStatus GatherAction::to_dropoff(SpawnableEntity& self, GameState& game) {
 ActionStatus AttackAction::tick(SpawnableEntity& self, GameState& game) {
     const auto& stats = game.stats_of(self);
     const SpawnableEntity* target = game.entity(target_);
-    if (!target || target->hp <= 0 || !game.is_enemy(self, *target)) {
+    if (!target || target->hp <= 0 || !game.can_target(self, *target)) {
         // Objetivo muerto o perdido: las unidades agresivas buscan otro cerca
         if (!stats.aggressive) return ActionStatus::Done;
         target_ = game.find_enemy_near(self, stats.sight);
@@ -244,7 +311,9 @@ ActionStatus BuildAction::tick(SpawnableEntity& self, GameState& game) {
 
     if (game.in_reach(self, *site)) {
         plan_.reset();
-        return game.contribute_build(*site) ? ActionStatus::Done : ActionStatus::Running;
+        if (!game.contribute_build(*site)) return ActionStatus::Running;
+        game.continue_after_build(self, site_);  // depósito o granja: ponerse a trabajar sin quedarse ocioso
+        return ActionStatus::Done;
     }
     if (!plan_) {
         plan_ = game.plan_path_to(self, *site);

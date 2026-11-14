@@ -38,6 +38,8 @@ struct SpawnRequest {
     core::TilePos tile;  // unidades: tile deseado; edificios/recursos: esquina del footprint
     bool as_construction_site = false;
     std::optional<core::Vec2F> exact_position;  // proyectiles
+    std::optional<int32_t> resource_amount;      // carne de un animal: la cantidad la fija el animal
+    bool nearby_ok = false;                      // si el tile está ocupado, vale uno libre cercano
     std::optional<ProjectileData> projectile;
 };
 
@@ -89,7 +91,11 @@ public:
     bool is_disabled(data::PlayerId p, data::TypeId t) const;
 
     // ─── Combate ─────────────────────────────────────────────────────────
+    // Hostil: jugadores distintos, o animales que atacan (lobos) o se defienden (jabalíes)
     bool is_enemy(const SpawnableEntity& a, const SpawnableEntity& b) const;
+    // Se le puede atacar a propósito: enemigos y además cualquier animal (cazar)
+    bool can_target(const SpawnableEntity& a, const SpawnableEntity& b) const;
+    bool is_huntable(const SpawnableEntity& e) const;
     core::Fixed distance_to(const SpawnableEntity& from, const SpawnableEntity& to) const;  // al borde del objetivo
     bool in_attack_range(const SpawnableEntity& attacker, const SpawnableEntity& target) const;
     core::EntityHandle find_enemy_near(const SpawnableEntity& e, int radius_tiles) const;
@@ -121,9 +127,21 @@ public:
     std::optional<MovePlan> plan_path_to(const SpawnableEntity& e, const SpawnableEntity& target);
     StepResult step_along(SpawnableEntity& e, MovePlan& plan);
     bool in_reach(const SpawnableEntity& e, const SpawnableEntity& target) const;
-    core::EntityHandle nearest_dropoff(data::PlayerId p, data::ResourceTag r, core::Vec2F from) const;
+    core::EntityHandle nearest_dropoff(data::PlayerId p, data::ResourceTag r, core::Vec2F from, MoveLayer layer = MoveLayer::Land) const;
     // Recursos de Gaia y, si for_player no es Gaia, también sus propias granjas terminadas
-    core::EntityHandle nearest_resource(data::ResourceTag r, core::Vec2F from, int max_tiles, data::PlayerId for_player = data::kGaia) const;
+    // skip_full: ignora los que ya tienen todos sus sitios ocupados
+    // reach: tierra → no los de aguas profundas; agua → solo los del agua
+    core::EntityHandle nearest_resource(data::ResourceTag r, core::Vec2F from, int max_tiles, data::PlayerId for_player = data::kGaia,
+                                        bool skip_full = false, std::optional<MoveLayer> reach = std::nullopt,
+                                        core::EntityHandle exclude = {}) const;
+    int gatherers_on(core::EntityHandle node) const;
+    void claim_gather(core::EntityHandle node);
+    // Al terminar un depósito o una granja, el constructor se pone a trabajar ahí si hay recurso cerca
+    void continue_after_build(SpawnableEntity& builder, core::EntityHandle site);
+    MoveLayer move_layer(const SpawnableEntity& e) const { return sheet_of(e).stats.naval ? MoveLayer::Water : MoveLayer::Land; }
+    // Lo que sabe el dueño de la unidad: capa por la que se mueve y su niebla
+    PathQuery path_query(const SpawnableEntity& e) const;
+    uint32_t random(uint32_t n) { return rng_.below(n); }  // aleatoriedad determinista de la simulación
     // Devuelve true si la obra queda terminada con esta aportación.
     bool contribute_build(SpawnableEntity& site);
     void request_despawn(core::EntityHandle h) { pending_despawns_.push_back(h); }
@@ -150,7 +168,12 @@ private:
 
     // ─── Comandos y sistemas ─────────────────────────────────────────────
     void apply_command(const Command& cmd);
-    void command_move(const std::vector<core::EntityHandle>& actors, core::Vec2F target, bool attack_move = false);
+    void command_move(const std::vector<core::EntityHandle>& actors, core::Vec2F target, bool attack_move = false, bool queued = false);
+    // Orden a una unidad: sustituye la actual o, con queued, se añade a su cola
+    void give_order(SpawnableEntity& e, const Order& order, bool queued);
+    std::unique_ptr<IAction> make_action(SpawnableEntity& e, const Order& order);
+    void convert(core::EntityHandle h, data::PlayerId new_owner);
+    void animal_system();
     void command_place_building(const Command& cmd, const std::vector<core::EntityHandle>& actors);
     void production_system();
     void action_system();
@@ -183,6 +206,8 @@ private:
     bool game_over_ = false;
     std::optional<data::PlayerId> winner_;
     std::vector<core::EntityHandle> query_;  // buffer reutilizable
+    std::vector<uint16_t> gather_claims_;    // recolectores por recurso (índice del handle), rehecho cada tick
+    std::optional<data::TypeId> carcass_type_;
 };
 
 }  // namespace sim

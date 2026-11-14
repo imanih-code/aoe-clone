@@ -50,20 +50,30 @@ private:
     int replans_ = 0;
 };
 
+class AttackAction;
+
+// Recolectar: ir → (cazar si es un animal) → recolectar → depositar → volver.
+// - Si el recurso está lleno de recolectores, prueba otro cercano del mismo tipo.
+// - En una granja (recurso transitable) trabaja una casilla al azar y luego otra, hasta llenar la carga.
 class GatherAction final : public IAction {
 public:
-    GatherAction(core::EntityHandle target, data::ResourceTag resource) : target_(target), resource_(resource) {}
+    GatherAction(core::EntityHandle target, data::ResourceTag resource);
+    ~GatherAction() override;
     ActionKind kind() const override { return ActionKind::Gather; }
     ActionStatus tick(SpawnableEntity& self, GameState& game) override;
     const char* label() const override;
     data::ResourceTag resource() const { return resource_; }
+    core::EntityHandle target() const { return target_; }
+    bool is_gathering() const { return phase_ == Phase::Gathering; }
 
 private:
-    enum class Phase { ToResource, Gathering, ToDropoff };
+    enum class Phase { ToResource, Hunting, Gathering, ToDropoff };
     ActionStatus to_resource(SpawnableEntity& self, GameState& game);
+    ActionStatus hunting(SpawnableEntity& self, GameState& game);
     ActionStatus gathering(SpawnableEntity& self, GameState& game);
     ActionStatus to_dropoff(SpawnableEntity& self, GameState& game);
-    bool retarget(SpawnableEntity& self, GameState& game);
+    bool retarget(SpawnableEntity& self, GameState& game, core::EntityHandle exclude = {});
+    StepResult follow(SpawnableEntity& self, GameState& game, const SpawnableEntity& target);
 
     core::EntityHandle target_;
     data::ResourceTag resource_;
@@ -73,6 +83,10 @@ private:
     bool has_spot_ = false;
     std::optional<MovePlan> plan_;
     int stuck_ = 0;
+    int wait_ = 0;                          // ticks esperando a que aparezca la carne del animal cazado
+    std::unique_ptr<AttackAction> hunt_;    // atacando al animal
+    std::optional<core::Vec2F> field_spot_; // casilla de la granja que se está trabajando
+    int field_gained_ = 0;
 };
 
 // Atacar: acercarse hasta tener al objetivo a tiro y golpear/disparar cada recarga.
