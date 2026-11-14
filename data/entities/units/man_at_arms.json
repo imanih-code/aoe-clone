@@ -1,0 +1,11 @@
+{
+  // Siguiente paso de la línea del miliciano (tecnología "Infantería veterana")
+  "key": "man_at_arms",
+  "extends": "militia",
+  "name": "Hombre de armas",
+  "description": "Infantería veterana: más vida y más daño.",
+  "hp": 45,
+  "attack": { "melee": 6, "building": 2 },
+  "age": 1,
+  "visual": { "size": 0.25, "label": "Hombre de armas" }
+}

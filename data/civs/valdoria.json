@@ -1,0 +1,12 @@
+{
+  "key": "valdoria",
+  "name": "Reino de Valdoria",
+  "description": "Civilización de infantería. Infantería +10 % de vida; los aldeanos talan un 10 % más rápido.",
+  "bonuses": [
+    { "id": "valdoria_infantry", "classes": ["infantry"],
+      "stats": [ { "stat": "max_hp", "op": "add_percent", "value": 10 } ] },
+    { "id": "valdoria_wood", "classes": ["villager"],
+      "stats": [ { "stat": "gather_rate", "resource": "wood", "op": "add_percent", "value": 10 } ] }
+  ],
+  "extra_trains": { "barracks": ["valdorian_guard"] }
+}

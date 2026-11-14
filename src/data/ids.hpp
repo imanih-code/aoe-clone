@@ -17,6 +17,9 @@ struct TypeId {
     constexpr auto operator<=>(const TypeId&) const = default;
 };
 
+using ArmorClassId = uint8_t;  // "melee", "pierce", "cavalry"... (data/classes.json)
+inline constexpr std::size_t kMaxArmorClasses = 32;
+
 using ClassId = uint8_t;
 inline constexpr std::size_t kMaxClasses = 64;
 

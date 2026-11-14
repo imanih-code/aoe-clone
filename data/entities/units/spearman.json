@@ -1,0 +1,15 @@
+{
+  "key": "spearman",
+  "extends": "_military_base",
+  "name": "Lancero",
+  "description": "Barato y con gran bonus contra caballería.",
+  "classes": ["unit", "military", "infantry"],
+  "hp": 45,
+  "speed": 1.0,
+  "attack": { "melee": 3, "cavalry": 15 },
+  "armor": { "melee": 0, "pierce": 0, "infantry": 0 },
+  "cost": { "food": 35, "wood": 25 },
+  "train_time": 22,
+  "age": 1,
+  "visual": { "size": 0.23, "label": "Lancero" }
+}

@@ -1,0 +1,11 @@
+{
+  "key": "age_3",
+  "name": "Edad de la Ciudad",
+  "description": "Desbloquea caballeros, ballesteros y la mejora de ballesta.",
+  "researched_at": "town_center",
+  "cost": { "food": 800, "gold": 200 },
+  "time": 160,
+  "age": 1,
+  "requires": ["age_2"],
+  "advances_to_age": 2
+}

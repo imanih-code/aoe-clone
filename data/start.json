@@ -3,14 +3,14 @@
   "resources": { "food": 200, "wood": 200, "gold": 100, "stone": 200 },
 
   "players": [
-    { "name": "Jugador 1", "color": "#2f6fdc" },
-    { "name": "Jugador 2", "color": "#d23c3c" },
-    { "name": "Jugador 3", "color": "#3aa655" },
-    { "name": "Jugador 4", "color": "#e0c03a" },
-    { "name": "Jugador 5", "color": "#2fc4c4" },
-    { "name": "Jugador 6", "color": "#8e4fd1" },
-    { "name": "Jugador 7", "color": "#7a7a7a" },
-    { "name": "Jugador 8", "color": "#e8812e" }
+    { "name": "Jugador 1", "color": "#2f6fdc", "civ": "valdoria" },
+    { "name": "Jugador 2", "color": "#d23c3c", "civ": "tarvesh" },
+    { "name": "Jugador 3", "color": "#3aa655", "civ": "ostreva" },
+    { "name": "Jugador 4", "color": "#e0c03a", "civ": "valdoria" },
+    { "name": "Jugador 5", "color": "#2fc4c4", "civ": "tarvesh" },
+    { "name": "Jugador 6", "color": "#8e4fd1", "civ": "ostreva" },
+    { "name": "Jugador 7", "color": "#7a7a7a", "civ": "valdoria" },
+    { "name": "Jugador 8", "color": "#e8812e", "civ": "tarvesh" }
   ],
 
   // offset: desplazamiento en tiles respecto al centro de la base

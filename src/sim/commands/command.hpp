@@ -18,6 +18,8 @@ enum class CommandType : uint8_t {
     Train,          // actors (edificios), type_arg
     CancelTrain,    // actors[0] (edificio), index
     SetRally,       // actors (edificios) → target_pos
+    Attack,         // actors → target (enemigo)
+    Research,       // actors[0] (edificio), index = TechId
 };
 
 // Única forma de cambiar la simulación desde fuera (jugador o IA).

@@ -105,7 +105,7 @@ ActionStatus GatherAction::gathering(SpawnableEntity& self, GameState& game) {
     // Cambiar de recurso tira lo que se llevaba
     if (self.carry.resource != resource_) self.carry = CarryState{resource_, Fixed{}};
 
-    const auto& stats = game.sheet_of(self).stats;
+    const auto& stats = game.stats_of(self);  // con bonus de civ y tecnologías
     const int32_t before = self.carry.amount.floor_int();
     self.carry.amount += stats.gather_per_tick[data::index_of(resource_)];
     int32_t gained = self.carry.amount.floor_int() - before;
@@ -160,6 +160,49 @@ ActionStatus GatherAction::to_dropoff(SpawnableEntity& self, GameState& game) {
         if (++stuck_ > 6) return ActionStatus::Done;
         break;
     }
+    return ActionStatus::Running;
+}
+
+// ─── Atacar ──────────────────────────────────────────────────────────────────
+
+ActionStatus AttackAction::tick(SpawnableEntity& self, GameState& game) {
+    const auto& stats = game.stats_of(self);
+    const SpawnableEntity* target = game.entity(target_);
+    if (!target || target->hp <= 0 || !game.is_enemy(self, *target)) {
+        // Objetivo muerto o perdido: las unidades agresivas buscan otro cerca
+        if (!stats.aggressive) return ActionStatus::Done;
+        target_ = game.find_enemy_near(self, stats.sight);
+        plan_.reset();
+        target = game.entity(target_);
+        if (!target) return ActionStatus::Done;
+    }
+    if (!has_origin_) {
+        origin_ = self.position;
+        has_origin_ = true;
+    }
+    if (cooldown_ > 0) --cooldown_;
+
+    if (game.in_attack_range(self, *target)) {
+        plan_.reset();
+        if (cooldown_ == 0) {
+            game.perform_attack(self, *target);
+            cooldown_ = stats.reload_ticks;
+        }
+        return ActionStatus::Running;
+    }
+
+    const auto& sheet = game.sheet_of(self);
+    if (!sheet.can_move()) return ActionStatus::Done;  // torres: el objetivo salió del alcance
+    // Lo que se decidió solo no se persigue lejos (no arrastrar el ejército por el mapa)
+    if (automatic_ && core::length(self.position - origin_) > Fixed::from_int(10)) return ActionStatus::Done;
+
+    // Objetivos que se mueven: replanificar cada medio segundo
+    if (!plan_ || --repath_ <= 0) {
+        plan_ = game.sheet_of(*target).is_unit() ? game.plan_path(self, target->position) : game.plan_path_to(self, *target);
+        repath_ = 10;
+        if (!plan_) return ActionStatus::Done;
+    }
+    if (game.step_along(self, *plan_) != StepResult::Moving) plan_.reset();
     return ActionStatus::Running;
 }
 

@@ -35,10 +35,21 @@ struct ConstructionData {
 };
 
 struct ProductionJob {
-    data::TypeId type;
+    data::TypeId type;                // unidad a entrenar (si tech está vacío)
+    std::optional<data::TechId> tech; // o tecnología a investigar
     uint32_t ticks_remaining = 0;
     uint32_t ticks_total = 0;
     data::ResourceArray paid{};  // se devuelve si se cancela
+};
+
+// Proyectil en vuelo: una entidad ligera (architecture.md §8, decisión 2)
+struct ProjectileData {
+    core::EntityHandle source;
+    core::EntityHandle target;
+    core::Vec2F aim;  // dónde estaba el objetivo al disparar: si se mueve, puede fallar
+    int32_t damage = 0;
+    data::PlayerId owner = data::kGaia;
+    data::TypeId source_type;
 };
 
 struct SpawnableEntity {
@@ -60,6 +71,7 @@ struct SpawnableEntity {
     CarryState carry;
     std::deque<ProductionJob> production;
     std::optional<core::Vec2F> rally_point;
+    std::optional<ProjectileData> projectile;
 
     // ─── Acción en curso ─────────────────────────────────────────────────
     std::unique_ptr<IAction> action;

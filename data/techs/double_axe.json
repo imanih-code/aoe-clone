@@ -1,0 +1,12 @@
+{
+  "key": "double_axe",
+  "name": "Hacha de doble filo",
+  "description": "Los aldeanos talan un 20 % más rápido.",
+  "researched_at": "lumber_camp",
+  "cost": { "food": 100, "wood": 50 },
+  "time": 25,
+  "modifiers": [
+    { "id": "double_axe", "classes": ["villager"],
+      "stats": [ { "stat": "gather_rate", "resource": "wood", "op": "add_percent", "value": 20 } ] }
+  ]
+}

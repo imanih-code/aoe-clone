@@ -22,7 +22,8 @@ struct AppOptions {
     sim::GameConfig game;
     std::filesystem::path screenshot;  // si no está vacío: guarda una captura en screenshot_frame y sale
     int screenshot_frame = 90;
-    bool demo = false;                 // selecciona las unidades propias y las mueve al empezar
+    bool demo = false;                 // economía automática al empezar (Fase 3)
+    bool battle = false;               // dos ejércitos frente a frente (Fase 4)
 };
 
 class GameApp {
@@ -33,6 +34,7 @@ public:
 private:
     void draw_frame(float alpha, float fps);
     void start_demo();
+    void start_battle();
 
     AppOptions options_;
     data::DataRegistry data_;

@@ -25,7 +25,7 @@ struct MovePlan {
 
 enum class StepResult { Moving, Arrived, Blocked };
 enum class ActionStatus { Running, Done };
-enum class ActionKind { Move, Gather, Build };
+enum class ActionKind { Move, Gather, Build, Attack };
 
 // Acción ordenada por el jugador (IActionBehavior en mutability.md).
 // Reglas: guarda EntityHandle (nunca punteros) y nunca reasigna self.action.
@@ -73,6 +73,27 @@ private:
     bool has_spot_ = false;
     std::optional<MovePlan> plan_;
     int stuck_ = 0;
+};
+
+// Atacar: acercarse hasta tener al objetivo a tiro y golpear/disparar cada recarga.
+// automatic = la unidad lo decidió sola (auto-ataque o represalia): no persigue más
+// de unos tiles desde donde empezó.
+class AttackAction final : public IAction {
+public:
+    AttackAction(core::EntityHandle target, bool automatic) : target_(target), automatic_(automatic) {}
+    ActionKind kind() const override { return ActionKind::Attack; }
+    ActionStatus tick(SpawnableEntity& self, GameState& game) override;
+    const char* label() const override { return "Atacando"; }
+    core::EntityHandle target() const { return target_; }
+
+private:
+    core::EntityHandle target_;
+    bool automatic_;
+    core::Vec2F origin_;
+    bool has_origin_ = false;
+    std::optional<MovePlan> plan_;
+    uint32_t cooldown_ = 0;
+    int repath_ = 0;
 };
 
 class BuildAction final : public IAction {

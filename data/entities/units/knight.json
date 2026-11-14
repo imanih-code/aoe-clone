@@ -1,0 +1,15 @@
+{
+  "key": "knight",
+  "extends": "scout",
+  "name": "Caballero",
+  "description": "Caballería pesada. Cara pero muy resistente.",
+  "hp": 100,
+  "speed": 1.35,
+  "sight": 5,
+  "attack": { "melee": 10 },
+  "armor": { "melee": 2, "pierce": 2, "cavalry": 0 },
+  "cost": { "food": 60, "gold": 75 },
+  "train_time": 30,
+  "age": 2,
+  "visual": { "size": 0.34, "label": "Caballero" }
+}

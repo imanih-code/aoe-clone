@@ -1,0 +1,16 @@
+{
+  "key": "forge_mail",
+  "name": "Cota de malla",
+  "description": "+1 de armadura cuerpo a cuerpo y a distancia para infantería.",
+  "researched_at": "forge",
+  "cost": { "food": 100 },
+  "time": 40,
+  "age": 1,
+  "modifiers": [
+    { "id": "forge_mail", "classes": ["infantry"],
+      "stats": [
+        { "stat": "armor", "class": "melee", "op": "add", "value": 1 },
+        { "stat": "armor", "class": "pierce", "op": "add", "value": 1 }
+      ] }
+  ]
+}

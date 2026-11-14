@@ -5,7 +5,7 @@
   "description": "Entrena infantería.",
   "hp": 1200,
   "footprint": [3, 3],
-  "trains": ["militia"],
+  "trains": ["militia", "spearman"],
   "cost": { "wood": 175 },
   "build_time": 50,
   "visual": { "height": 1.1, "label": "Cuartel" }

@@ -309,19 +309,34 @@ void EntityRenderer::draw_world(sf::RenderTarget& target, const sim::GameState& 
             v.label_y = p.y - r * 1.25f - 2.f;
             break;
         }
+        case data::ShapeKind::Arrow: {
+            // Trazo en el sentido del vuelo, elevado del suelo; no se puede seleccionar
+            sf::Vector2f dir = world_to_iso(e.position) - world_to_iso(e.prev_position);
+            const float len = std::sqrt(dir.x * dir.x + dir.y * dir.y);
+            dir = len > 0.01f ? dir / len : sf::Vector2f{1.f, 0.f};
+            const sf::Vector2f c = p - sf::Vector2f{0.f, 14.f};
+            const sf::Vertex shaft[] = {{c - dir * 7.f, sf::Color(60, 40, 20)}, {c + dir * 7.f, sf::Color(60, 40, 20)}};
+            target.draw(shaft, 2, sf::PrimitiveType::Lines);
+            const sf::Vertex tip[] = {{c + dir * 4.f, sf::Color(230, 230, 230)}, {c + dir * 7.f, sf::Color(230, 230, 230)}};
+            target.draw(tip, 2, sf::PrimitiveType::Lines);
+            v.hit = sf::FloatRect(p, {0.f, 0.f});
+            v.label_y = p.y;
+            break;
+        }
         }
 
-        // Barra de vida de lo seleccionado
-        if (selected && sheet.stats.max_hp > 1) {
-            const float w = 34.f;
-            const float ratio = std::clamp(static_cast<float>(e.hp) / static_cast<float>(sheet.stats.max_hp), 0.f, 1.f);
+        // Barra de vida: lo seleccionado y todo lo que esté herido (unidades y edificios)
+        const int32_t max_hp = sheet.is_projectile() || sheet.is_resource() ? 0 : game.stats_of(e).max_hp;
+        if (max_hp > 1 && (selected || (e.hp < max_hp && !e.construction))) {
+            const float w = sheet.is_building() ? 48.f : 30.f;
+            const float ratio = std::clamp(static_cast<float>(e.hp) / static_cast<float>(max_hp), 0.f, 1.f);
             sf::RectangleShape bg({w, 4.f});
             bg.setPosition({p.x - w * 0.5f, v.hit.position.y - 7.f});
             bg.setFillColor(sf::Color(40, 0, 0, 200));
             target.draw(bg);
             sf::RectangleShape fg({w * ratio, 4.f});
             fg.setPosition(bg.getPosition());
-            fg.setFillColor(sf::Color(70, 220, 70));
+            fg.setFillColor(ratio > 0.5f ? sf::Color(70, 220, 70) : ratio > 0.25f ? sf::Color(230, 200, 60) : sf::Color(230, 70, 60));
             target.draw(fg);
         }
 
@@ -390,6 +405,7 @@ void EntityRenderer::draw_labels(sf::RenderWindow& window, const sim::GameState&
 
     for (const VisibleEntity& v : visible_) {
         const auto& sheet = data_.sheet(v.type);
+        if (sheet.visual.label.empty() || sheet.is_projectile()) continue;  // flechas: sin etiqueta
         const bool is_hovered = hovered && *hovered == v.handle;
         const bool is_selected = contains(selection, v.handle);
         bool show = is_hovered || is_selected;

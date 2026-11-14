@@ -52,22 +52,27 @@ void CommandPanel::rebuild(const sim::GameState& game, data::PlayerId local, std
     buttons_.clear();
     has_queue_ = false;
 
+    const auto& data = game.data();
+    const sim::PlayerState& me = game.player(local);
+    auto age_name = [&](uint8_t age) {
+        return age < data.age_names().size() ? data.age_names()[age] : std::string("edad ") + std::to_string(age);
+    };
+
     std::vector<data::TypeId> builds;
     bool any_unit = false;
-    const sim::SpawnableEntity* trainer = nullptr;
+    const sim::SpawnableEntity* producer = nullptr;  // edificio que entrena o investiga
     for (core::EntityHandle h : selection) {
         const sim::SpawnableEntity* e = game.entity(h);
         if (!e || e->current_player != local) continue;
         const auto& s = game.sheet_of(*e);
         if (s.is_unit()) {
             any_unit = true;
-            if (s.stats.has(data::Capability::Build)) {
-                for (auto t : s.builds) {
-                    if (std::find(builds.begin(), builds.end(), t) == builds.end()) builds.push_back(t);
-                }
+            for (auto t : game.buildable_by(local, s)) {
+                if (std::find(builds.begin(), builds.end(), t) == builds.end()) builds.push_back(t);
             }
-        } else if (!trainer && s.is_building() && e->is_complete() && !s.trains.empty()) {
-            trainer = e;
+        } else if (!producer && s.is_building() && e->is_complete() &&
+                   (!game.trainable_at(local, e->type).empty() || !game.techs_at(local, e->type).empty())) {
+            producer = e;
         }
     }
 
@@ -75,11 +80,10 @@ void CommandPanel::rebuild(const sim::GameState& game, data::PlayerId local, std
         if (slot >= kGridKeys.size()) return;
         b.hotkey = kGridKeys[slot];
         b.hotkey_char = kGridChars[slot];
-        b.index = b.kind == ButtonKind::CancelQueue ? b.index : static_cast<int>(slot);
+        b.index = static_cast<int>(slot);
         buttons_.push_back(std::move(b));
     };
 
-    const auto& data = game.data();
     if (any_unit) {
         std::size_t slot = 0;
         for (data::TypeId t : builds) {
@@ -88,11 +92,13 @@ void CommandPanel::rebuild(const sim::GameState& game, data::PlayerId local, std
             b.kind = ButtonKind::Build;
             b.type = t;
             b.label = s.visual.label;
-            b.enabled = game.can_afford(local, s.stats.cost);
+            const bool age_ok = me.age >= s.stats.min_age;
+            b.enabled = age_ok && game.can_afford(local, s.stats.cost);
             b.tooltip = "Construir " + s.display_name + "\n" + cost_text(s.stats.cost) + "  ·  " + seconds_text(s.stats.build_ticks);
             if (s.stats.population_provided > 0) b.tooltip += "\n+" + std::to_string(s.stats.population_provided) + " de población";
             if (!s.description.empty()) b.tooltip += "\n" + s.description;
-            if (!b.enabled) b.tooltip += "\nFaltan recursos";
+            if (!age_ok) b.tooltip += "\nRequiere " + age_name(s.stats.min_age);
+            else if (!b.enabled) b.tooltip += "\nFaltan recursos";
             add(slot++, std::move(b));
             if (slot == kStopSlot) break;
         }
@@ -101,30 +107,64 @@ void CommandPanel::rebuild(const sim::GameState& game, data::PlayerId local, std
         stop.label = "Detener";
         stop.tooltip = "Detener\nCancela la orden actual";
         add(kStopSlot, std::move(stop));
-    } else if (trainer) {
-        const auto& ts = game.sheet_of(*trainer);
+    } else if (producer) {
         std::size_t slot = 0;
-        for (data::TypeId t : ts.trains) {
+        const bool queue_full = producer->production.size() >= sim::kMaxQueue;
+        // Unidades: ya resueltas con la civilización y las líneas de mejora
+        for (data::TypeId t : game.trainable_at(local, producer->type)) {
             const auto& s = data.sheet(t);
             Button b;
             b.kind = ButtonKind::Train;
             b.type = t;
             b.label = s.visual.label;
-            b.enabled = game.can_afford(local, s.stats.cost) && trainer->production.size() < sim::kMaxQueue;
+            const bool age_ok = me.age >= s.stats.min_age;
+            b.enabled = age_ok && game.can_afford(local, s.stats.cost) && !queue_full;
             b.tooltip = "Entrenar " + s.display_name + "\n" + cost_text(s.stats.cost) + "  ·  " + seconds_text(s.stats.train_ticks);
             if (!s.description.empty()) b.tooltip += "\n" + s.description;
-            if (!game.can_afford(local, s.stats.cost)) b.tooltip += "\nFaltan recursos";
+            if (!age_ok) b.tooltip += "\nRequiere " + age_name(s.stats.min_age);
+            else if (!game.can_afford(local, s.stats.cost)) b.tooltip += "\nFaltan recursos";
             add(slot++, std::move(b));
         }
-        // Cola de producción: clic para cancelar (se devuelve el coste)
-        for (std::size_t i = 0; i < trainer->production.size(); ++i) {
-            const auto& job = trainer->production[i];
+        // Tecnologías (incluido subir de edad)
+        for (data::TechId id : game.techs_at(local, producer->type)) {
+            const auto& tech = data.tech(id);
+            const sim::TechStatus status = game.tech_status(local, id);
+            Button b;
+            b.kind = ButtonKind::Research;
+            b.tech = id;
+            b.label = tech.name;
+            b.is_tech = true;
+            b.enabled = status == sim::TechStatus::Available && game.can_afford(local, tech.cost) && !queue_full;
+            b.tooltip = "Investigar " + tech.name + "\n" + cost_text(tech.cost) + "  ·  " + seconds_text(tech.research_ticks);
+            if (!tech.description.empty()) b.tooltip += "\n" + tech.description;
+            switch (status) {
+            case sim::TechStatus::Queued: b.tooltip += "\nYa se está investigando"; break;
+            case sim::TechStatus::NeedsAge: b.tooltip += "\nRequiere " + age_name(tech.min_age); break;
+            case sim::TechStatus::NeedsTech:
+                for (data::TechId req : tech.requires_techs) {
+                    if (!me.has_researched(req)) b.tooltip += "\nRequiere " + data.tech(req).name;
+                }
+                break;
+            default:
+                if (!game.can_afford(local, tech.cost)) b.tooltip += "\nFaltan recursos";
+            }
+            add(slot++, std::move(b));
+        }
+        // Cola: clic para cancelar (se devuelve el coste)
+        for (std::size_t i = 0; i < producer->production.size(); ++i) {
+            const auto& job = producer->production[i];
             Button q;
             q.kind = ButtonKind::CancelQueue;
-            q.type = job.type;
             q.index = static_cast<int>(i);
-            q.label = data.sheet(job.type).visual.label;
-            q.tooltip = "Cancelar " + data.sheet(job.type).display_name + "\nSe devuelve " + cost_text(job.paid);
+            q.is_tech = job.tech.has_value();
+            if (job.tech) {
+                q.label = data.tech(*job.tech).name;
+                q.tooltip = "Cancelar " + data.tech(*job.tech).name + "\nSe devuelve " + cost_text(job.paid);
+            } else {
+                q.type = job.type;
+                q.label = data.sheet(job.type).visual.label;
+                q.tooltip = "Cancelar " + data.sheet(job.type).display_name + "\nSe devuelve " + cost_text(job.paid);
+            }
             if (i == 0) {
                 q.progress = 1.f - static_cast<float>(job.ticks_remaining) / static_cast<float>(std::max<uint32_t>(1, job.ticks_total));
             }
@@ -198,6 +238,7 @@ void CommandPanel::draw(sf::RenderWindow& window, const sf::Font& font, sf::Vect
         sf::RectangleShape r(b.rect.size);
         r.setPosition(b.rect.position);
         sf::Color fill = b.kind == ButtonKind::CancelQueue ? sf::Color(52, 60, 78) : sf::Color(70, 58, 40);
+        if (b.is_tech) fill = b.kind == ButtonKind::CancelQueue ? sf::Color(60, 50, 82) : sf::Color(48, 62, 74);  // tecnologías en azul
         if (!b.enabled) fill = sf::Color(48, 44, 40);
         if (is_hover && b.enabled) fill = render::mix(fill, sf::Color::White, 0.18f);
         r.setFillColor(fill);

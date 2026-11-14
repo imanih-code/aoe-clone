@@ -25,6 +25,11 @@ void GameState::setup_players() {
     gaia.color = 0xb0b0b0ffu;
     gaia.active = true;
 
+    for (auto& ps : players_) {
+        ps.researched.assign(data_.techs().size(), false);
+        ps.stats_cache.assign(data_.sheets().size(), std::nullopt);
+    }
+
     for (int p = 1; p <= config_.num_players; ++p) {
         PlayerState& ps = players_[static_cast<std::size_t>(p)];
         const auto& def = start.players[static_cast<std::size_t>(p - 1)];
@@ -33,6 +38,15 @@ void GameState::setup_players() {
         ps.color = def.color;
         ps.active = true;
         ps.resources = start.resources;
+
+        // Civilización: la de GameConfig, si no la de start.json, si no la primera
+        std::string civ_key = def.civ;
+        if (static_cast<std::size_t>(p - 1) < config_.civs.size() && !config_.civs[static_cast<std::size_t>(p - 1)].empty()) {
+            civ_key = config_.civs[static_cast<std::size_t>(p - 1)];
+        }
+        const std::size_t civ_index = data_.find_civ(civ_key).value_or(0);
+        ps.civ = &data_.civs()[civ_index];
+        ps.modifiers = ps.civ->bonuses;  // los bonus de civ son modificadores permanentes desde el tick 0
     }
 }
 

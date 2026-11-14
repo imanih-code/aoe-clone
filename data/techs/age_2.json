@@ -1,0 +1,10 @@
+{
+  // Subir de edad es una tecnología más (architecture.md §6.4)
+  "key": "age_2",
+  "name": "Edad de la Villa",
+  "description": "Desbloquea galería de tiro, establo, forja, torres y nuevas unidades.",
+  "researched_at": "town_center",
+  "cost": { "food": 500 },
+  "time": 130,
+  "advances_to_age": 1
+}

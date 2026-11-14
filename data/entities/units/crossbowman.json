@@ -1,0 +1,12 @@
+{
+  "key": "crossbowman",
+  "extends": "archer",
+  "name": "Ballestero",
+  "description": "Mejora del arquero: más vida, daño y alcance.",
+  "hp": 35,
+  "attack": { "pierce": 5 },
+  "range": 5,
+  "sight": 7,
+  "age": 2,
+  "visual": { "label": "Ballestero" }
+}

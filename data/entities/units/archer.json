@@ -1,0 +1,18 @@
+{
+  "key": "archer",
+  "extends": "_military_base",
+  "name": "Arquero",
+  "description": "Ataca a distancia. Frágil en cuerpo a cuerpo.",
+  "classes": ["unit", "military", "archer"],
+  "hp": 30,
+  "speed": 0.96,
+  "attack": { "pierce": 4 },
+  "armor": { "melee": 0, "pierce": 0, "archer": 0 },
+  "range": 4,
+  "projectile": "arrow",
+  "sight": 6,
+  "cost": { "wood": 25, "gold": 45 },
+  "train_time": 35,
+  "age": 1,
+  "visual": { "size": 0.22, "label": "Arquero" }
+}

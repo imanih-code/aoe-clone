@@ -194,6 +194,19 @@ void InputController::activate(const ui::Button& button, const sim::GameState& g
         pending_.push_back(std::move(cmd));
         break;
     }
+    case ui::ButtonKind::Research: {
+        const data::TypeId at = game.data().tech(button.tech).researched_at;
+        for (core::EntityHandle h : selection_) {
+            const sim::SpawnableEntity* e = game.entity(h);
+            if (e && e->current_player == local_ && e->type == at) {
+                auto cmd = make(sim::CommandType::Research, {h});
+                cmd.index = button.tech;
+                pending_.push_back(std::move(cmd));
+                break;
+            }
+        }
+        break;
+    }
     case ui::ButtonKind::CancelQueue: {
         for (core::EntityHandle h : selection_) {
             const sim::SpawnableEntity* e = game.entity(h);
@@ -236,7 +249,7 @@ void InputController::right_click(sf::Vector2i pixel, const sf::RenderWindow& wi
         std::vector<core::EntityHandle> buildings;
         for (core::EntityHandle h : selection_) {
             const sim::SpawnableEntity* e = game.entity(h);
-            if (e && e->current_player == local_ && !game.sheet_of(*e).trains.empty()) buildings.push_back(h);
+            if (e && e->current_player == local_ && !game.trainable_at(local_, e->type).empty()) buildings.push_back(h);
         }
         if (buildings.empty()) return;
         auto cmd = make(sim::CommandType::SetRally, std::move(buildings));
@@ -251,6 +264,13 @@ void InputController::right_click(sf::Vector2i pixel, const sf::RenderWindow& wi
         const sim::SpawnableEntity* target = game.entity(*hit);
         if (target && target->resource_node) {
             auto cmd = make(sim::CommandType::Gather, units);
+            cmd.target = *hit;
+            pending_.push_back(std::move(cmd));
+            markers_.push_back({render::world_to_iso(target->position), 0.f});
+            return;
+        }
+        if (target && target->current_player != local_ && target->current_player != data::kGaia && !target->projectile) {
+            auto cmd = make(sim::CommandType::Attack, units);  // los que no pueden atacar se acercan
             cmd.target = *hit;
             pending_.push_back(std::move(cmd));
             markers_.push_back({render::world_to_iso(target->position), 0.f});

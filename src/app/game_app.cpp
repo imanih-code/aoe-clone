@@ -71,6 +71,7 @@ int GameApp::run() {
         }
 
         if (options_.demo && frame == 5) start_demo();
+        if (options_.battle && frame == 5) start_battle();
 
         draw_frame(accumulator / kStep, fps);
         ++frame;
@@ -145,6 +146,27 @@ void GameApp::start_demo() {
     // Seleccionar los aldeanos y dejar un aserradero "en la mano" para ver el panel y la vista previa
     input_.select(villagers);
     input_.begin_placement(data_.type("lumber_camp"));
+}
+
+// Modo batalla: dos ejércitos frente a frente junto a la base del jugador 1,
+// con una torre propia. Sirve para ver el combate de la Fase 4 sin jugar una partida.
+void GameApp::start_battle() {
+    const core::Vec2F s = game_->start_position(1);
+    const core::TilePos c{s.x.floor_int() + 9, s.y.floor_int() + 2};
+    std::vector<core::EntityHandle> mine;
+    auto spawn = [&](const char* key, data::PlayerId p, int dx, int dy) {
+        const auto h = game_->debug_spawn(data_.type(key), p, {c.x + dx, c.y + dy});
+        if (h && p == 1) mine.push_back(h);
+    };
+    for (int i = 0; i < 5; ++i) spawn("militia", 1, -2, i - 2);
+    for (int i = 0; i < 4; ++i) spawn("archer", 1, -4, i - 2);
+    for (int i = 0; i < 4; ++i) spawn("militia", 2, 4, i - 2);
+    for (int i = 0; i < 3; ++i) spawn("scout", 2, 6, i - 1);
+    for (int r = 1; r < 6; ++r) {
+        if (game_->debug_spawn(data_.type("watch_tower"), 1, {c.x - 3, c.y - 3 - r})) break;
+    }
+    input_.select(mine);
+    camera_.center_on_world({static_cast<float>(c.x), static_cast<float>(c.y)});
 }
 
 void GameApp::draw_frame(float alpha, float fps) {

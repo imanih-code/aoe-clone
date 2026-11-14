@@ -1,0 +1,13 @@
+{
+  "key": "forge_blades",
+  "name": "Hojas templadas",
+  "description": "+1 de ataque cuerpo a cuerpo para infantería y caballería.",
+  "researched_at": "forge",
+  "cost": { "food": 100, "gold": 50 },
+  "time": 40,
+  "age": 1,
+  "modifiers": [
+    { "id": "forge_blades", "classes": ["infantry", "cavalry"],
+      "stats": [ { "stat": "attack", "class": "melee", "op": "add", "value": 1 } ] }
+  ]
+}

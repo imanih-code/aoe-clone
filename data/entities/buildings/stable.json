@@ -1,0 +1,13 @@
+{
+  "key": "stable",
+  "extends": "_building_base",
+  "name": "Establo",
+  "description": "Entrena caballería.",
+  "hp": 1200,
+  "footprint": [3, 3],
+  "trains": ["scout", "knight"],
+  "cost": { "wood": 175 },
+  "build_time": 50,
+  "age": 1,
+  "visual": { "height": 1.0, "label": "Establo" }
+}

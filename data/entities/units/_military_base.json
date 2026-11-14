@@ -1,0 +1,9 @@
+{
+  // Base de todas las unidades militares: atacan y lo hacen solas si ven un enemigo.
+  "key": "_military_base",
+  "extends": "_unit_base",
+  "abstract": true,
+  "capabilities": ["move", "attack"],
+  "aggressive": true,
+  "sight": 5
+}

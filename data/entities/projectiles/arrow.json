@@ -1,0 +1,7 @@
+{
+  "key": "arrow",
+  "name": "Flecha",
+  "kind": "projectile",
+  "speed": 7.0,
+  "visual": { "shape": "arrow", "color": "#3a2a1a", "label": "" }
+}

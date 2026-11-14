@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <string>
 #include <vector>
 
 #include "core/rng.hpp"
@@ -28,6 +29,7 @@ struct GameConfig {
     int map_width = 96;
     int map_height = 96;
     int num_players = 2;
+    std::vector<std::string> civs;  // key por jugador; vacío = la de data/start.json
 };
 
 struct SpawnRequest {
@@ -35,7 +37,19 @@ struct SpawnRequest {
     data::PlayerId owner = data::kGaia;
     core::TilePos tile;  // unidades: tile deseado; edificios/recursos: esquina del footprint
     bool as_construction_site = false;
+    std::optional<core::Vec2F> exact_position;  // proyectiles
+    std::optional<ProjectileData> projectile;
 };
+
+struct DamageEvent {
+    core::EntityHandle target;
+    core::EntityHandle source;
+    int32_t amount = 0;
+    data::PlayerId attacker_player = data::kGaia;
+    data::TypeId attacker_type;
+};
+
+enum class TechStatus { Available, Researched, Queued, NeedsAge, NeedsTech, Disabled };
 
 class GameState {
 public:
@@ -62,6 +76,29 @@ public:
     bool can_afford(data::PlayerId p, const data::ResourceArray& cost) const;
     bool can_place(data::TypeId building, core::TilePos tile) const;
 
+    // ─── Stats efectivos (ficha + bonus de civ + tecnologías del jugador) ─
+    const data::EntityStats& stats_for(data::PlayerId p, data::TypeId t) const;
+    // Siempre contra original_player (architecture.md §3)
+    const data::EntityStats& stats_of(const SpawnableEntity& e) const { return stats_for(e.original_player, e.type); }
+
+    // ─── Lo que un jugador puede hacer (civ, mejoras, edad) ─────────────
+    std::vector<data::TypeId> trainable_at(data::PlayerId p, data::TypeId building) const;
+    std::vector<data::TypeId> buildable_by(data::PlayerId p, const data::ObjSheet& unit) const;
+    std::vector<data::TechId> techs_at(data::PlayerId p, data::TypeId building) const;
+    TechStatus tech_status(data::PlayerId p, data::TechId t) const;
+    bool is_disabled(data::PlayerId p, data::TypeId t) const;
+
+    // ─── Combate ─────────────────────────────────────────────────────────
+    bool is_enemy(const SpawnableEntity& a, const SpawnableEntity& b) const;
+    core::Fixed distance_to(const SpawnableEntity& from, const SpawnableEntity& to) const;  // al borde del objetivo
+    bool in_attack_range(const SpawnableEntity& attacker, const SpawnableEntity& target) const;
+    core::EntityHandle find_enemy_near(const SpawnableEntity& e, int radius_tiles) const;
+
+    // ─── Para tests y futuras herramientas (editor, escenarios) ──────────
+    core::EntityHandle debug_spawn(data::TypeId type, data::PlayerId owner, core::TilePos tile);
+    void debug_complete_research(data::PlayerId p, data::TechId t) { complete_research(p, t); }
+    void debug_set_resources(data::PlayerId p, const data::ResourceArray& r) { players_.at(p).resources = r; }
+
     // Hash del estado: dos simulaciones con la misma seed y comandos deben coincidir.
     uint64_t state_hash() const;
 
@@ -78,6 +115,8 @@ public:
     // Devuelve true si la obra queda terminada con esta aportación.
     bool contribute_build(SpawnableEntity& site);
     void request_despawn(core::EntityHandle h) { pending_despawns_.push_back(h); }
+    // Golpe cuerpo a cuerpo (daño acumulado) o disparo (proyectil que se crea al final del tick)
+    void perform_attack(const SpawnableEntity& attacker, const SpawnableEntity& target);
 
 private:
     // ─── Montaje de la partida (map_generation.cpp) ──────────────────────
@@ -103,6 +142,14 @@ private:
     void command_place_building(const Command& cmd, const std::vector<core::EntityHandle>& actors);
     void production_system();
     void action_system();
+    void projectile_system();
+    void resolve_damage();
+    void auto_attack_system();
+
+    // ─── Tecnologías y civilizaciones ────────────────────────────────────
+    void complete_research(data::PlayerId p, data::TechId t);
+    void on_modifiers_changed(data::PlayerId p);
+    void retype(SpawnableEntity& e, data::TypeId to);
 
     const data::DataRegistry& data_;
     GameConfig config_;
@@ -118,6 +165,7 @@ private:
 
     std::vector<SpawnRequest> pending_spawns_;
     std::vector<core::EntityHandle> pending_despawns_;
+    std::vector<DamageEvent> damage_;
     std::vector<core::EntityHandle> query_;  // buffer reutilizable
 };
 

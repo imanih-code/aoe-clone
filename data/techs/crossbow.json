@@ -1,0 +1,10 @@
+{
+  "key": "crossbow",
+  "name": "Ballesta",
+  "description": "Mejora los arqueros a ballesteros.",
+  "researched_at": "archery_range",
+  "cost": { "food": 125, "gold": 75 },
+  "time": 35,
+  "age": 2,
+  "upgrades": [ { "from": "archer", "to": "crossbowman" } ]
+}

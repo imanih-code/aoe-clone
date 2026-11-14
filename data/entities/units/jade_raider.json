@@ -1,0 +1,14 @@
+{
+  // Unidad única del Clan Tarvesh (ver data/civs/tarvesh.json)
+  "key": "jade_raider",
+  "extends": "scout",
+  "name": "Jinete de Jade",
+  "description": "Unidad única de Tarvesh: caballería rápida que caza arqueros.",
+  "hp": 70,
+  "speed": 1.6,
+  "attack": { "melee": 8, "archer": 4 },
+  "armor": { "melee": 1, "pierce": 2, "cavalry": 0 },
+  "cost": { "food": 70, "gold": 40 },
+  "age": 1,
+  "visual": { "size": 0.32, "label": "Jinete de Jade" }
+}

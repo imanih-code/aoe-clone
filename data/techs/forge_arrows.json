@@ -1,0 +1,16 @@
+{
+  "key": "forge_arrows",
+  "name": "Puntas de hierro",
+  "description": "+1 de ataque y +1 de alcance para arqueros y torres.",
+  "researched_at": "forge",
+  "cost": { "food": 100, "gold": 50 },
+  "time": 40,
+  "age": 1,
+  "modifiers": [
+    { "id": "forge_arrows", "classes": ["archer", "tower"],
+      "stats": [
+        { "stat": "attack", "class": "pierce", "op": "add", "value": 1 },
+        { "stat": "range", "op": "add", "value": 1 }
+      ] }
+  ]
+}

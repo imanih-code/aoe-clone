@@ -1,0 +1,14 @@
+{
+  "key": "tarvesh",
+  "name": "Clan Tarvesh",
+  "description": "Civilización de caballería. Caballería +20 % de vida y +10 % de velocidad; sin ballesteros.",
+  "bonuses": [
+    { "id": "tarvesh_cavalry", "classes": ["cavalry"],
+      "stats": [
+        { "stat": "max_hp", "op": "add_percent", "value": 20 },
+        { "stat": "move_speed", "op": "add_percent", "value": 10 }
+      ] }
+  ],
+  "disabled_techs": ["crossbow"],
+  "extra_trains": { "stable": ["jade_raider"] }
+}

@@ -15,12 +15,14 @@
 
 namespace ui {
 
-enum class ButtonKind { Build, Train, Stop, CancelQueue };
+enum class ButtonKind { Build, Train, Research, Stop, CancelQueue };
 
 struct Button {
     ButtonKind kind = ButtonKind::Stop;
     data::TypeId type;
-    int index = 0;  // CancelQueue: posición en la cola
+    int index = 0;  // posición en la cuadrícula; CancelQueue: posición en la cola
+    data::TechId tech = 0;  // Research
+    bool is_tech = false;   // color distinto para tecnologías
     sf::FloatRect rect;
     sf::Keyboard::Key hotkey = sf::Keyboard::Key::Unknown;
     char hotkey_char = 0;

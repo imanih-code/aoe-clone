@@ -64,6 +64,8 @@ Principio: **vertical slice primero**. Un aldeano que corta madera de punta a pu
 
 **Hecho cuando**: dos ejércitos pelean con resultados que cuadran con una hoja de cálculo de daño, una tecnología de ataque cambia el resultado de forma reproducible (test con semilla fija), y dos civilizaciones distintas producen stats distintos para la misma unidad.
 
+> **Estado (2026-11-14)**: hecha. Daño por clase de armadura, ataque cuerpo a cuerpo y a distancia con flechas como entidades (pueden fallar), daño acumulado por tick, represalia y auto-ataque de unidades agresivas, torres y plaza mayor que disparan. `ModifierResolver` puro con stats efectivos cacheados por jugador. 3 edades, 10 tecnologías (forja, economía, edades, líneas de mejora), 3 civilizaciones propias (Valdoria, Tarvesh, Ostreva) con bonus, unidad única y cosas desactivadas. 29 tests. Pendiente: formaciones de combate, que los aldeanos huyan, IA enemiga (Fase 5).
+
 ## Fase 5 — Niebla, IA y victoria
 
 - `VisibilityMap` por jugador, niebla en render, minimapa.

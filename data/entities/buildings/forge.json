@@ -1,0 +1,12 @@
+{
+  "key": "forge",
+  "extends": "_building_base",
+  "name": "Forja",
+  "description": "Investiga mejoras de ataque y armadura.",
+  "hp": 1000,
+  "footprint": [3, 3],
+  "cost": { "wood": 150 },
+  "build_time": 40,
+  "age": 1,
+  "visual": { "height": 0.9, "label": "Forja" }
+}

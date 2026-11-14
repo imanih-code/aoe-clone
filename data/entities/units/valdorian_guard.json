@@ -1,0 +1,13 @@
+{
+  // Unidad única del Reino de Valdoria (ver data/civs/valdoria.json)
+  "key": "valdorian_guard",
+  "extends": "man_at_arms",
+  "name": "Guardia de Valdoria",
+  "description": "Unidad única de Valdoria: infantería muy blindada.",
+  "hp": 60,
+  "attack": { "melee": 8, "building": 3 },
+  "armor": { "melee": 2, "pierce": 2, "infantry": 0 },
+  "cost": { "food": 65, "gold": 30 },
+  "age": 1,
+  "visual": { "size": 0.27, "label": "Guardia" }
+}

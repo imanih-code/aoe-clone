@@ -47,7 +47,8 @@ add_library(aoe_warnings INTERFACE)
 if(MSVC)
     target_compile_options(aoe_warnings INTERFACE /W4 /permissive- /utf-8)
 else()
-    target_compile_options(aoe_warnings INTERFACE -Wall -Wextra -Wpedantic)
+    # missing-field-initializers: los structs de datos usan valores por defecto a propósito
+    target_compile_options(aoe_warnings INTERFACE -Wall -Wextra -Wpedantic -Wno-missing-field-initializers)
 endif()
 
 # ─── Simulación + datos (sin SFML: se puede testear sin ventana) ─────────────
@@ -59,6 +60,8 @@ add_library(sim STATIC
     src/sim/game/game_state.cpp
     src/sim/game/map_generation.cpp
     src/sim/actions/actions.cpp
+    src/sim/game/game_combat.cpp
+    src/sim/modifiers/modifier_resolver.cpp
 )
 target_include_directories(sim PUBLIC src)
 target_link_libraries(sim PUBLIC nlohmann_json::nlohmann_json PRIVATE aoe_warnings)
@@ -96,6 +99,7 @@ if(AOE_BUILD_TESTS)
         tests/test_core.cpp
         tests/test_sim.cpp
         tests/test_economy.cpp
+        tests/test_combat.cpp
     )
     target_include_directories(sim_tests PRIVATE ${doctest_SOURCE_DIR}/doctest)
     target_link_libraries(sim_tests PRIVATE sim aoe_warnings)

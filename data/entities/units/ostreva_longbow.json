@@ -1,0 +1,14 @@
+{
+  // Unidad única de la Liga de Ostreva (ver data/civs/ostreva.json)
+  "key": "ostreva_longbow",
+  "extends": "archer",
+  "name": "Arco largo de Ostreva",
+  "description": "Unidad única de Ostreva: arquero de gran alcance.",
+  "hp": 32,
+  "attack": { "pierce": 5 },
+  "range": 6,
+  "sight": 8,
+  "cost": { "wood": 35, "gold": 40 },
+  "age": 1,
+  "visual": { "label": "Arco largo" }
+}

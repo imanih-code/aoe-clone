@@ -4,5 +4,6 @@
   "kind": "building",
   "classes": ["building"],
   "sight": 3,
+  "armor": { "melee": 2, "pierce": 7, "building": 0 },
   "visual": { "shape": "building", "height": 1.0 }
 }

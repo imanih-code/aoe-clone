@@ -1,0 +1,15 @@
+{
+  "key": "gold_picks",
+  "name": "Picos de minero",
+  "description": "Los aldeanos extraen oro y piedra un 15 % más rápido.",
+  "researched_at": "mining_camp",
+  "cost": { "food": 100, "wood": 75 },
+  "time": 30,
+  "modifiers": [
+    { "id": "gold_picks", "classes": ["villager"],
+      "stats": [
+        { "stat": "gather_rate", "resource": "gold", "op": "add_percent", "value": 15 },
+        { "stat": "gather_rate", "resource": "stone", "op": "add_percent", "value": 15 }
+      ] }
+  ]
+}

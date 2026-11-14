@@ -1,0 +1,12 @@
+{
+  "key": "baskets",
+  "name": "Cestas de mimbre",
+  "description": "Los aldeanos cargan 5 recursos más por viaje.",
+  "researched_at": "mill",
+  "cost": { "food": 75, "wood": 75 },
+  "time": 25,
+  "modifiers": [
+    { "id": "baskets", "classes": ["villager"],
+      "stats": [ { "stat": "carry_capacity", "op": "add", "value": 5 } ] }
+  ]
+}

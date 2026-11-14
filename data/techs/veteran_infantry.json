@@ -1,0 +1,11 @@
+{
+  // Línea de mejora (architecture.md §11.8): todo miliciano pasa a ser hombre de armas
+  "key": "veteran_infantry",
+  "name": "Infantería veterana",
+  "description": "Mejora los milicianos a hombres de armas, incluidos los que ya existen.",
+  "researched_at": "barracks",
+  "cost": { "food": 100, "gold": 40 },
+  "time": 40,
+  "age": 1,
+  "upgrades": [ { "from": "militia", "to": "man_at_arms" } ]
+}

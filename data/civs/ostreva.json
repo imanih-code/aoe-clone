@@ -1,0 +1,13 @@
+{
+  "key": "ostreva",
+  "name": "Liga de Ostreva",
+  "description": "Civilización de arqueros. Arqueros +1 de alcance; aldeanos +10 % en oro; sin caballeros.",
+  "bonuses": [
+    { "id": "ostreva_range", "classes": ["archer"],
+      "stats": [ { "stat": "range", "op": "add", "value": 1 } ] },
+    { "id": "ostreva_gold", "classes": ["villager"],
+      "stats": [ { "stat": "gather_rate", "resource": "gold", "op": "add_percent", "value": 10 } ] }
+  ],
+  "disabled_types": ["knight"],
+  "extra_trains": { "archery_range": ["ostreva_longbow"] }
+}

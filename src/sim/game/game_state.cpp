@@ -32,10 +32,14 @@ GameState::GameState(const data::DataRegistry& data, const GameConfig& config)
 // ─── Tick ────────────────────────────────────────────────────────────────────
 
 void GameState::step(std::span<const Command> commands) {
+    // Orden fijo de sistemas (architecture.md, Diagrama 7)
     for (const Command& cmd : commands) apply_command(cmd);
     production_system();
-    action_system();
-    apply_pending();
+    action_system();       // mover, recolectar, construir, atacar (el daño se acumula)
+    projectile_system();   // las flechas en vuelo avanzan e impactan
+    resolve_damage();      // se aplica todo el daño a la vez: dos que se matan, mueren los dos
+    auto_attack_system();  // unidades ociosas agresivas buscan objetivo
+    apply_pending();       // altas y bajas al final del tick
     ++tick_;
 }
 
@@ -117,16 +121,44 @@ void GameState::apply_command(const Command& cmd) {
 
     case CommandType::Train: {
         const auto& unit = data_.sheet(cmd.type_arg);
+        if (players_[cmd.issuer].age < unit.stats.min_age) break;
         for (auto h : actors) {
             SpawnableEntity& b = *entities_.get(h);
-            if (!b.is_complete() || !sheet_of(b).can_train(cmd.type_arg)) continue;
+            if (!b.is_complete()) continue;
+            const auto options = trainable_at(cmd.issuer, b.type);  // incluye civ y líneas de mejora
+            if (std::find(options.begin(), options.end(), cmd.type_arg) == options.end()) continue;
             if (b.production.size() >= kMaxQueue || !can_afford(cmd.issuer, unit.stats.cost)) continue;
             auto& res = players_[cmd.issuer].resources;
             for (std::size_t i = 0; i < data::kResourceCount; ++i) res[i] -= unit.stats.cost[i];
             const uint32_t t = std::max<uint32_t>(1, unit.stats.train_ticks);
-            b.production.push_back({cmd.type_arg, t, t, unit.stats.cost});
+            b.production.push_back({cmd.type_arg, std::nullopt, t, t, unit.stats.cost});
             break;  // una orden de entrenar = una unidad, en el primer edificio válido
         }
+        break;
+    }
+
+    case CommandType::Research: {
+        if (cmd.index < 0 || static_cast<std::size_t>(cmd.index) >= data_.techs().size()) break;
+        const auto& tech = data_.tech(static_cast<data::TechId>(cmd.index));
+        SpawnableEntity& b = *entities_.get(actors.front());
+        if (!b.is_complete() || b.type != tech.researched_at || b.production.size() >= kMaxQueue) break;
+        if (tech_status(cmd.issuer, tech.id) != TechStatus::Available || !can_afford(cmd.issuer, tech.cost)) break;
+        auto& res = players_[cmd.issuer].resources;
+        for (std::size_t i = 0; i < data::kResourceCount; ++i) res[i] -= tech.cost[i];
+        b.production.push_back({tech.researched_at, tech.id, tech.research_ticks, tech.research_ticks, tech.cost});
+        break;
+    }
+
+    case CommandType::Attack: {
+        const SpawnableEntity* target = entities_.get(cmd.target);
+        if (!target) break;
+        std::vector<core::EntityHandle> others;
+        for (auto h : actors) {
+            SpawnableEntity& e = *entities_.get(h);
+            if (sheet_of(e).can_attack() && is_enemy(e, *target)) e.action = std::make_unique<AttackAction>(cmd.target, false);
+            else if (sheet_of(e).can_move()) others.push_back(h);
+        }
+        command_move(others, target->position);
         break;
     }
 
@@ -169,6 +201,7 @@ void GameState::command_move(const std::vector<core::EntityHandle>& actors, Vec2
 
 void GameState::command_place_building(const Command& cmd, const std::vector<core::EntityHandle>& actors) {
     const auto& sheet = data_.sheet(cmd.type_arg);
+    if (players_[cmd.issuer].age < sheet.stats.min_age || is_disabled(cmd.issuer, cmd.type_arg)) return;
     std::vector<core::EntityHandle> builders;
     for (auto h : actors) {
         if (sheet_of(*entities_.get(h)).can_build(cmd.type_arg)) builders.push_back(h);
@@ -197,6 +230,13 @@ void GameState::production_system() {
             ProductionJob& job = b->production.front();
             if (job.ticks_remaining > 0) --job.ticks_remaining;
             if (job.ticks_remaining > 0) continue;
+
+            if (job.tech) {
+                const data::TechId tech = *job.tech;
+                b->production.pop_front();
+                complete_research(owner.id, tech);  // puede cambiar tipos: no usar `b` después
+                continue;
+            }
 
             const auto& unit = data_.sheet(job.type);
             if (owner.population_current + unit.stats.population_cost > owner.population_cap) continue;  // falta población
@@ -278,7 +318,7 @@ std::optional<MovePlan> GameState::plan_path_to(const SpawnableEntity& e, const 
 }
 
 StepResult GameState::step_along(SpawnableEntity& e, MovePlan& plan) {
-    Fixed step = sheet_of(e).stats.move_speed / Fixed::from_int(kTicksPerSecond);
+    Fixed step = stats_of(e).move_speed / Fixed::from_int(kTicksPerSecond);
     while (step > Fixed{} && !plan.done()) {
         const Vec2F d = plan.current() - e.position;
         const Fixed dist = core::length(d);
@@ -350,15 +390,16 @@ bool GameState::contribute_build(SpawnableEntity& site) {
     c.progress += (c.last_tick == tick_) ? Fixed::ratio(1, 3) : Fixed::from_int(1);
     c.last_tick = tick_;
     const auto& s = sheet_of(site);
+    const int32_t max_hp = stats_of(site).max_hp;
     const Fixed total = Fixed::from_int(static_cast<int32_t>(c.total_ticks));
     if (c.progress >= total) {
         site.construction.reset();
-        site.hp = s.stats.max_hp;
+        site.hp = max_hp;
         PlayerState& owner = players_[site.current_player];
         owner.population_cap = std::min(kMaxPopulation, owner.population_cap + s.stats.population_provided);
         return true;
     }
-    site.hp = std::max<int32_t>(1, static_cast<int32_t>(static_cast<int64_t>(s.stats.max_hp) * c.progress.raw / total.raw));
+    site.hp = std::max<int32_t>(1, static_cast<int32_t>(static_cast<int64_t>(max_hp) * c.progress.raw / total.raw));
     return false;
 }
 
@@ -370,7 +411,19 @@ core::EntityHandle GameState::spawn_now(const SpawnRequest& req) {
     e.type = req.type;
     e.classes = sheet.stats.classes;
     e.original_player = e.current_player = req.owner;
-    e.hp = sheet.stats.max_hp;
+    e.hp = stats_for(req.owner, req.type).max_hp;
+
+    if (sheet.is_projectile()) {
+        // Proyectil: sin footprint, no bloquea ni cuenta para ningún jugador
+        e.position = req.exact_position.value_or(core::tile_center(req.tile));
+        e.prev_position = e.position;
+        e.projectile = req.projectile;
+        const Vec2F pos = e.position;
+        const core::EntityHandle handle = entities_.insert(std::move(e));
+        entities_.get(handle)->self = handle;
+        spatial_.insert(handle, pos);
+        return handle;
+    }
 
     if (sheet.is_unit()) {
         auto tile = Pathfinder::nearest_passable(map_, req.tile, 24);
@@ -457,7 +510,10 @@ uint64_t GameState::state_hash() const {
     };
     mix(tick_);
     for (int p = 1; p <= config_.num_players; ++p) {
-        for (int32_t r : players_[static_cast<std::size_t>(p)].resources) mix(static_cast<uint32_t>(r));
+        const PlayerState& ps = players_[static_cast<std::size_t>(p)];
+        for (int32_t r : ps.resources) mix(static_cast<uint32_t>(r));
+        mix(ps.age);
+        mix(ps.modifiers.size());
     }
     entities_.for_each([&](core::EntityHandle handle, const SpawnableEntity& e) {
         mix(handle.index);
