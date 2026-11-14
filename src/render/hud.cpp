@@ -68,7 +68,7 @@ void Hud::draw(sf::RenderWindow& window, const sim::GameState& game, const HudIn
     int idle = 0;
     for (core::EntityHandle h : me.units) {
         const sim::SpawnableEntity* e = game.entity(h);
-        if (e && !e->action && game.sheet_of(*e).stats.has(data::Capability::Gather)) ++idle;
+        if (e && !e->action && !e->garrisoned_in && game.has_cap(*e, data::Capability::Gather)) ++idle;
     }
     if (idle > 0) put("Aldeanos ociosos  " + std::to_string(idle) + "  (.)", {x, 5.f}, 15, sf::Color(250, 210, 120));
 
@@ -127,7 +127,10 @@ void Hud::draw(sf::RenderWindow& window, const sim::GameState& game, const HudIn
                 const auto& st = game.stats_of(*e);
                 std::string line1, line2, line3;
                 if (st.max_hp > 1) line1 = "Vida: " + std::to_string(e->hp) + " / " + std::to_string(st.max_hp);
-                if (sheet.can_attack() && !sheet.is_resource()) {
+                if (const auto* g = game.garrison_config(*e); g && g->capacity > 0) {
+                    line1 += "   ·   Guarnición " + std::to_string(e->garrison.size()) + "/" + std::to_string(g->capacity) + "  (Alt + clic der.)";
+                }
+                if (game.can_attack(*e) && !sheet.is_resource()) {
                     std::string atk;
                     for (const auto& a : st.attacks) {
                         if (a.value == 0) continue;

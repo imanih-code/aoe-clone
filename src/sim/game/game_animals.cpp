@@ -61,7 +61,7 @@ void GameState::animal_system() {
             if (d <= Fixed::from_int(3)) ++close[u->current_player];
             // Para un ciervo, la amenaza es una tropa cerca, o cualquiera si acaba de recibir un golpe
             const bool hurt = e.last_damaged_tick <= tick_ && tick_ - e.last_damaged_tick < kFleeTicks;
-            const bool scary = hurt ? d <= r : (d <= Fixed::from_int(3) && !us.stats.has(data::Capability::Gather));
+            const bool scary = hurt ? d <= r : (d <= Fixed::from_int(3) && !has_cap(*u, data::Capability::Gather));
             if (scary && (!threat || d < threat_d || (d == threat_d && o.index < threat->self.index))) {
                 threat = u;
                 threat_d = d;

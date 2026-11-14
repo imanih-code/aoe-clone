@@ -44,6 +44,9 @@ public:
     const TechTemplate& tech(TechId id) const { return techs_.at(id); }
     std::optional<TechId> find_tech(std::string_view key) const;
 
+    const TriggerTemplate* find_trigger(std::string_view id) const;
+    const SkillTemplate* find_skill(std::string_view id) const;
+
     const std::vector<CivTemplate>& civs() const { return civs_; }
     std::optional<std::size_t> find_civ(std::string_view key) const;
 
@@ -51,6 +54,8 @@ public:
 
 private:
     Modifier parse_modifier(const nlohmann::json& j, const std::string& where) const;
+    ActionConfig parse_action_config(Capability cap, const nlohmann::json& j, const std::string& where) const;
+    void validate_references(const Modifier& m, const std::string& where) const;
 
     std::vector<ObjSheet> sheets_;
     std::map<std::string, TypeId, std::less<>> type_by_key_;
@@ -61,6 +66,8 @@ private:
     std::vector<TechTemplate> techs_;
     std::map<std::string, TechId, std::less<>> tech_by_key_;
     std::vector<CivTemplate> civs_;
+    std::map<std::string, TriggerTemplate, std::less<>> triggers_;
+    std::map<std::string, SkillTemplate, std::less<>> skills_;
     StartConfig start_;
 };
 

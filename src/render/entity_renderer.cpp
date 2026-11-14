@@ -502,6 +502,17 @@ void EntityRenderer::draw_world(sf::RenderTarget& target, const sim::GameState& 
             target.draw(route);
         }
 
+        // Conversión en curso: un haz dorado del que convierte al objetivo, más intenso según avanza
+        if (e.action && e.action->kind() == sim::ActionKind::Convert) {
+            const auto& conv = static_cast<const sim::ConvertAction&>(*e.action);
+            if (const sim::SpawnableEntity* t = game.entity(conv.target()); t && conv.progress() > 0.f) {
+                const auto alpha_beam = static_cast<std::uint8_t>(80.f + 170.f * conv.progress());
+                const sf::Vertex beam[] = {{p - sf::Vector2f{0.f, 14.f}, sf::Color(255, 230, 140, alpha_beam)},
+                                           {world_to_iso(t->position) - sf::Vector2f{0.f, 10.f}, sf::Color(255, 250, 220, alpha_beam)}};
+                target.draw(beam, 2, sf::PrimitiveType::Lines);
+            }
+        }
+
         // Punto de reunión del edificio seleccionado
         if (selected && e.rally_point) {
             const sf::Vector2f flag = world_to_iso(*e.rally_point);
@@ -589,7 +600,9 @@ void EntityRenderer::draw_labels(sf::RenderWindow& window, const sim::GameState&
                                              static_cast<float>(std::max<uint32_t>(1, ent->construction->total_ticks)));
             text.setString(labels_[v.type.value] + utf8(" · en obra " + std::to_string(pct) + "%"));
         } else {
-            text.setString(labels_[v.type.value]);
+            // Edificio con gente dentro: cuántos hay
+            if (ent && !ent->garrison.empty()) text.setString(labels_[v.type.value] + utf8(" (" + std::to_string(ent->garrison.size()) + ")"));
+            else text.setString(labels_[v.type.value]);
         }
         sf::Color fill = sf::Color(235, 235, 235);
         if (v.owner != data::kGaia) fill = mix(rgba(game.player(v.owner).color), sf::Color::White, 0.55f);

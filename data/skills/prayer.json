@@ -1,0 +1,10 @@
+{
+  "id": "prayer",
+  "name": "Plegaria",
+  "description": "Durante 10 s cura 2 de vida por segundo a las unidades propias cercanas.",
+  "behavior": "heal_aura",
+  "cooldown": 45,
+  "duration": 10,
+  "radius": 4,
+  "heal_per_second": 2
+}

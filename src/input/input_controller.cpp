@@ -72,9 +72,8 @@ std::vector<core::EntityHandle> InputController::own_units(const sim::GameState&
     for (core::EntityHandle h : selection_) {
         const sim::SpawnableEntity* e = game.entity(h);
         if (!e || e->current_player != local_) continue;
-        const auto& s = game.sheet_of(*e);
-        if (!s.can_move()) continue;
-        if (builders_only && !s.stats.has(data::Capability::Build)) continue;
+        if (!game.can_move(*e)) continue;
+        if (builders_only && !game.has_cap(*e, data::Capability::Build)) continue;
         out.push_back(h);
     }
     return out;
@@ -210,6 +209,33 @@ void InputController::activate(const ui::Button& button, const sim::GameState& g
         }
         break;
     }
+    case ui::ButtonKind::UseSkill: {
+        // A todas las unidades seleccionadas que tienen esa misma habilidad en esa posición
+        std::vector<core::EntityHandle> casters;
+        std::string id;
+        for (core::EntityHandle h : selection_) {
+            const sim::SpawnableEntity* e = game.entity(h);
+            if (!e || e->current_player != local_) continue;
+            const auto& skills = game.skills_of(*e);
+            if (static_cast<std::size_t>(button.skill) >= skills.size()) continue;
+            if (id.empty()) id = skills[static_cast<std::size_t>(button.skill)];
+            if (skills[static_cast<std::size_t>(button.skill)] == id) casters.push_back(h);
+        }
+        if (casters.empty()) break;
+        auto cmd = make(sim::CommandType::UseSkill, std::move(casters));
+        cmd.index = button.skill;
+        pending_.push_back(std::move(cmd));
+        break;
+    }
+    case ui::ButtonKind::Ungarrison: {
+        std::vector<core::EntityHandle> buildings;
+        for (core::EntityHandle h : selection_) {
+            const sim::SpawnableEntity* e = game.entity(h);
+            if (e && e->current_player == local_ && !e->garrison.empty()) buildings.push_back(h);
+        }
+        if (!buildings.empty()) pending_.push_back(make(sim::CommandType::Ungarrison, std::move(buildings)));
+        break;
+    }
     case ui::ButtonKind::CancelQueue: {
         for (core::EntityHandle h : selection_) {
             const sim::SpawnableEntity* e = game.entity(h);
@@ -291,7 +317,7 @@ void InputController::right_click(sf::Vector2i pixel, const sf::RenderWindow& wi
         if (animal && (target->current_player == data::kGaia || target->current_player == local_)) {
             std::vector<core::EntityHandle> hunters, fighters;
             for (auto h : units) {
-                (game.sheet_of(*game.entity(h)).stats.has(data::Capability::Gather) ? hunters : fighters).push_back(h);
+                (game.has_cap(*game.entity(h), data::Capability::Gather) ? hunters : fighters).push_back(h);
             }
             const bool huntable = game.is_huntable(*target);
             if (huntable && !hunters.empty()) {
@@ -311,10 +337,51 @@ void InputController::right_click(sf::Vector2i pixel, const sf::RenderWindow& wi
             return;
         }
         if (target && target->current_player != local_ && target->current_player != data::kGaia && !target->projectile) {
-            auto cmd = make(sim::CommandType::Attack, units);  // los que no pueden atacar se acercan
-            cmd.target = *hit;
-            push(std::move(cmd), target->position);
+            // Quien puede convertirlo (monjes, caballería mística) lo convierte; el resto ataca
+            std::vector<core::EntityHandle> converters, attackers;
+            for (auto h : units) {
+                (game.can_convert(*game.entity(h), *target) ? converters : attackers).push_back(h);
+            }
+            if (!converters.empty()) {
+                auto cmd = make(sim::CommandType::Convert, std::move(converters));
+                cmd.target = *hit;
+                push(std::move(cmd), target->position);
+            }
+            if (!attackers.empty()) {
+                auto cmd = make(sim::CommandType::Attack, std::move(attackers));  // los que no pueden atacar se acercan
+                cmd.target = *hit;
+                push(std::move(cmd), target->position);
+            }
             return;
+        }
+        // Unidad propia herida y algún sanador seleccionado: curarla
+        if (target && target->current_player == local_ && game.sheet_of(*target).is_unit()) {
+            std::vector<core::EntityHandle> healers;
+            for (auto h : units) {
+                if (game.can_heal(*game.entity(h), *target)) healers.push_back(h);
+            }
+            if (!healers.empty()) {
+                auto cmd = make(sim::CommandType::Heal, std::move(healers));
+                cmd.target = *hit;
+                push(std::move(cmd), target->position);
+                return;
+            }
+        }
+        // Edificio propio con guarnición: Alt + clic derecho (o tropas sin otra cosa que hacer ahí) → entrar
+        if (target && target->current_player == local_ && target->is_complete() && game.garrison_config(*target)) {
+            const bool alt = sf::Keyboard::isKeyPressed(sf::Keyboard::Key::LAlt) || sf::Keyboard::isKeyPressed(sf::Keyboard::Key::RAlt);
+            std::vector<core::EntityHandle> entering;
+            for (auto h : units) {
+                const auto* u = game.entity(h);
+                const bool worker = game.has_cap(*u, data::Capability::Gather);
+                if ((alt || !worker) && game.can_garrison(*u, *target)) entering.push_back(h);
+            }
+            if (!entering.empty()) {
+                auto cmd = make(sim::CommandType::Garrison, std::move(entering));
+                cmd.target = *hit;
+                push(std::move(cmd), target->position);
+                return;
+            }
         }
         if (target && target->current_player == local_ && !target->is_complete()) {
             auto builders = own_units(game, true);
@@ -345,7 +412,7 @@ void InputController::select_next_idle(const sim::GameState& game, render::Camer
     for (std::size_t n = 0; n < units.size(); ++n) {
         const std::size_t i = (idle_cursor_ + n) % units.size();
         const sim::SpawnableEntity* e = game.entity(units[i]);
-        if (!e || e->action || !game.sheet_of(*e).stats.has(data::Capability::Gather)) continue;
+        if (!e || e->action || !game.has_cap(*e, data::Capability::Gather)) continue;
         selection_ = {units[i]};
         camera.center_on_world({e->position.x.to_float(), e->position.y.to_float()});
         idle_cursor_ = static_cast<uint32_t>(i + 1);

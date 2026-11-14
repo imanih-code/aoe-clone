@@ -1,0 +1,9 @@
+{
+  "id": "battle_cry",
+  "name": "Grito de guerra",
+  "description": "+3 de ataque cuerpo a cuerpo durante 10 s.",
+  "behavior": "stat_boost",
+  "cooldown": 40,
+  "duration": 10,
+  "modifiers": [ { "id": "battle_cry", "stats": [ { "stat": "attack", "class": "melee", "op": "add", "value": 3 } ] } ]
+}

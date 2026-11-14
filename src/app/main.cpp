@@ -22,7 +22,7 @@ fs::path find_data_dir(const char* argv0) {
 }
 
 void print_usage() {
-    std::cout << "Uso: aoe_clone [--seed N] [--players N] [--size N] [--civ valdoria|tarvesh|ostreva] [--demo] [--battle] [--spectate] [--reveal] [--no-ai] [--speed 1|2|4|8] [--replay fichero.json] [--record fichero.json] [--screenshot fichero.png] [--frame N]\n";
+    std::cout << "Uso: aoe_clone [--seed N] [--players N] [--size N] [--civ valdoria|tarvesh|ostreva] [--demo] [--battle] [--showcase] [--spectate] [--reveal] [--no-ai] [--speed 1|2|4|8] [--replay fichero.json] [--record fichero.json] [--screenshot fichero.png] [--frame N]\n";
 }
 
 }  // namespace
@@ -45,6 +45,7 @@ int main(int argc, char** argv) {
             else if (arg == "--frame") options.screenshot_frame = std::stoi(next());
             else if (arg == "--demo") options.demo = true;
             else if (arg == "--battle") options.battle = true;
+            else if (arg == "--showcase") options.showcase = true;
             else if (arg == "--spectate") options.spectate = true;
             else if (arg == "--reveal") options.reveal = true;
             else if (arg == "--no-ai") options.no_ai = true;

@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include "core/fixed.hpp"
@@ -41,9 +42,54 @@ struct VisualDef {
 };
 
 // Lo que una entidad sabe hacer (architecture.md §11.9). Fijo por ficha hasta la Fase 6.
-enum class Capability : uint8_t { Move, Gather, Build, Attack };
-inline constexpr std::size_t kCapabilityCount = 4;
+// Lo que una entidad sabe hacer (mutability.md). Cada una tiene su comportamiento en el motor;
+// cuáles tiene cada unidad sale de los datos y puede cambiar en partida (ObjectModifier).
+enum class Capability : uint8_t { Move, Gather, Build, Attack, Convert, Heal, Morph, Garrison };
+inline constexpr std::size_t kCapabilityCount = 8;
 using CapabilitySet = std::bitset<kCapabilityCount>;
+
+// ─── ActionConfig: qué puede hacer exactamente con cada capability (mutability.md, Diagrama 2) ───
+// std::variant (no jerarquía con punteros): se copia como un valor más.
+
+struct BuildConfig {
+    std::vector<TypeId> buildable;  // vacío = la lista "builds" de la ficha
+};
+struct ConvertConfig {
+    ClassSet classes;           // vacío = cualquier unidad
+    bool buildings = false;     // también edificios
+    core::Fixed time_mult = core::Fixed::from_int(1);  // >1 = más lento
+    core::Fixed range = core::Fixed::from_int(1);
+};
+struct MorphConfig {
+    TypeId target;              // en qué se transforma
+    bool consume = true;        // true: la unidad desaparece y aparece la nueva entidad
+    bool keep_hp_percent = true;
+};
+struct HealConfig {
+    ClassSet classes;           // vacío = cualquier unidad
+    core::Fixed range = core::Fixed::from_int(4);
+    core::Fixed per_second = core::Fixed::from_int(1);
+};
+struct GarrisonConfig {         // en un edificio: qué acepta dentro
+    ClassSet classes;           // vacío = cualquier unidad con la capability garrison
+    int capacity = 0;
+    int arrows_per_unit = 1;    // flechas extra por unidad guarecida
+};
+using ActionConfig = std::variant<BuildConfig, ConvertConfig, MorphConfig, HealConfig, GarrisonConfig>;
+
+// Combina dos configs de la misma capability (p. ej. dos BuildConfig unen sus listas).
+ActionConfig merge_config(const ActionConfig& base, const ActionConfig& extra);
+
+// Cambios de capacidades, triggers y habilidades que trae un Modifier (mutability.md, Diagrama 5)
+struct ObjectModifier {
+    std::optional<Capability> grant;
+    std::optional<Capability> remove;
+    std::optional<ActionConfig> config;  // se combina con la que ya tenga para "grant"
+    std::string grant_trigger;
+    std::string remove_trigger;
+    std::string grant_skill;
+    std::string remove_skill;
+};
 
 // Ataque o armadura contra una clase de armadura (architecture.md §4.5)
 struct DamageEntry {
@@ -132,6 +178,10 @@ struct ObjSheet {
     VisualDef visual;
     std::vector<TypeId> trains;  // edificios: unidades que entrena
     std::vector<TypeId> builds;  // unidades: edificios que construye
+    // Mutabilidad (base: lo que tiene al nacer; luego pueden cambiarlo los modificadores)
+    std::vector<std::pair<Capability, ActionConfig>> action_configs;
+    std::vector<std::string> triggers;  // ids de data/triggers
+    std::vector<std::string> skills;    // ids de data/skills
 
     bool is_unit() const { return kind == EntityKind::Unit; }
     bool is_building() const { return kind == EntityKind::Building; }
@@ -164,6 +214,7 @@ struct Modifier {
     std::optional<TypeId> target_type;  // vacío = cualquier tipo
     ClassSet target_classes;            // vacío = cualquier clase; si no, basta con tener una
     std::vector<StatModifier> stats;
+    std::vector<ObjectModifier> object_mods;
 
     bool applies_to(TypeId t, const ClassSet& classes) const {
         if (target_type && *target_type != t) return false;
@@ -206,6 +257,49 @@ struct CivTemplate {
         TypeId unit;
     };
     std::vector<ExtraTrain> extra_trains;    // unidades únicas y similares
+};
+
+// ─── Triggers y habilidades (mutability.md, Diagramas 3 y 4) ─────────────────
+
+enum class TriggerEvent : uint8_t { OnDeath, OnKill, OnHit, OnSpawn, OnConvert };
+
+struct SpawnEffect {
+    TypeId type;
+    int count = 1;
+    bool inherit_original = true;  // el nuevo tiene el mismo original_player (sus stats)
+    bool inherit_current = true;   // y el mismo dueño actual
+    core::Fixed hp_fraction = core::Fixed::from_int(1);
+};
+
+struct ResourceEffect {
+    ResourceTag resource = ResourceTag::Gold;
+    int32_t amount = 0;
+    bool to_original = false;  // false: al dueño actual
+};
+
+struct TriggerTemplate {
+    std::string id;
+    TriggerEvent event = TriggerEvent::OnDeath;
+    ClassSet filter_classes;           // OnKill/OnHit: solo si la otra entidad tiene alguna de estas clases
+    uint16_t probability_permille = 1000;
+    int charges = -1;                  // -1 = siempre; si no, cuántas veces puede dispararse
+    std::vector<SpawnEffect> spawns;
+    std::vector<ResourceEffect> resources;
+    std::vector<Modifier> self_modifiers;  // se aplican a la propia entidad (permanentes)
+};
+
+enum class SkillBehavior : uint8_t { Morph, HealAura, StatBoost };
+
+struct SkillTemplate {
+    std::string id;
+    std::string name;
+    std::string description;
+    SkillBehavior behavior = SkillBehavior::StatBoost;
+    uint32_t cooldown_ticks = 0;
+    uint32_t duration_ticks = 0;
+    core::Fixed radius = core::Fixed::from_int(4);
+    core::Fixed heal_per_second;
+    std::vector<Modifier> modifiers;  // StatBoost: modificadores temporales sobre la unidad
 };
 
 // ─── Configuración de partida (data/start.json) ─────────────────────────────

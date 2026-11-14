@@ -4,7 +4,7 @@
     "unit", "building", "resource_node",
     "villager", "civilian", "military",
     "infantry", "cavalry", "archer", "siege", "ship",
-    "tower", "tree", "mine", "bush", "animal"
+    "tower", "tree", "mine", "bush", "animal", "monk"
   ],
   // Clases de armadura (architecture.md §4.5). "melee" y "pierce" existen siempre.
   // Un bonus contra caballería es un ataque "cavalry" que solo cuenta contra quien tenga armadura "cavalry".

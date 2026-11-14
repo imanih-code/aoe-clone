@@ -1,0 +1,13 @@
+{
+  // Caso 4 de mutability.md: al morir, el jinete se levanta como hombre de armas con media vida.
+  "key": "death_knight",
+  "extends": "knight",
+  "name": "Caballero de la muerte",
+  "description": "Al caer, su jinete sigue luchando a pie (hombre de armas con media vida).",
+  "hp": 110,
+  "attack": { "melee": 11 },
+  "triggers": ["death_knight_rise"],
+  "cost": { "food": 70, "gold": 90 },
+  "age": 2,
+  "visual": { "label": "Caballero de la muerte" }
+}

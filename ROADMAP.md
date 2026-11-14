@@ -94,6 +94,8 @@ Todo `mutability.md`: `CapabilitySet` dinámico, `ActionConfig` como `std::varia
 
 **Hecho cuando**: los 4 casos de `mutability.md` funcionan en partida y sus tests pasan sin tocar código del motor para añadir un quinto caso del mismo tipo (solo datos).
 
+> **Estado (2026-11-14)**: hecha. `CapabilityCache` por entidad que se reconstruye al cambiar los modificadores del jugador o de la instancia; `ActionConfig` como `std::variant` con fusión de configs; `ObjectModifier` (dar/quitar capability, config, trigger, skill); monjes que convierten y curan; guarnición en plaza mayor y torres con flechas extra; triggers `on_death`/`on_kill`/`on_hit`/`on_spawn`/`on_convert` con cargas y probabilidad; skills (morph, aura de curación, mejora temporal) con enfriamiento. `tests/test_mutability.cpp` cubre los casos 1–5 (el quinto, saqueo, solo con datos), quitar una capability en partida y el determinismo. 56 tests. Pendiente: que la IA use monjes, guarnición y skills. `--showcase` lo enseña en partida.
+
 ## Fase 7 — Opcional
 
 - Guardar/cargar partida.

@@ -1,0 +1,21 @@
+{
+  // Convierte enemigos (que conservan sus stats: architecture.md §3) y cura a los suyos.
+  "key": "monk",
+  "extends": "_unit_base",
+  "name": "Monje",
+  "description": "Convierte unidades enemigas y cura a las propias. Habilidad: Plegaria.",
+  "classes": ["unit", "monk", "civilian"],
+  "capabilities": ["move", "convert", "heal", "garrison"],
+  "action_configs": {
+    "convert": { "range": 6, "time_mult": 1.0 },
+    "heal": { "range": 4, "per_second": 1.5 }
+  },
+  "skills": ["prayer"],
+  "hp": 30,
+  "speed": 0.7,
+  "sight": 7,
+  "cost": { "gold": 100 },
+  "train_time": 50,
+  "age": 2,
+  "visual": { "size": 0.24, "label": "Monje" }
+}

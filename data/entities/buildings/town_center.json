@@ -18,5 +18,6 @@
   "cost": { "wood": 275, "stone": 100 },
   "build_time": 150,
   "armor": { "melee": 3, "pierce": 5, "building": 0 },
+  "action_configs": { "garrison": { "classes": ["villager", "infantry", "archer", "monk"], "capacity": 10, "arrows_per_unit": 1 } },
   "visual": { "height": 1.6, "label": "Plaza mayor" }
 }

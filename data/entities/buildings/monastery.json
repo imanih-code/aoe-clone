@@ -1,0 +1,13 @@
+{
+  "key": "monastery",
+  "extends": "_building_base",
+  "name": "Monasterio",
+  "description": "Entrena monjes y guerreros rituales. Investiga la caballería mística.",
+  "hp": 1500,
+  "footprint": [3, 3],
+  "trains": ["monk", "ritual_warrior"],
+  "cost": { "wood": 175 },
+  "build_time": 40,
+  "age": 2,
+  "visual": { "height": 1.3, "label": "Monasterio" }
+}

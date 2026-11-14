@@ -4,6 +4,8 @@
 #include <cmath>
 #include <fstream>
 #include <functional>
+#include <type_traits>
+#include <variant>
 
 #include <nlohmann/json.hpp>
 
@@ -89,6 +91,126 @@ std::vector<fs::path> json_files_in(const fs::path& dir) {
     return files;
 }
 
+
+Capability parse_capability(const std::string& s, const std::string& where) {
+    static const std::pair<const char*, Capability> kNames[] = {
+        {"move", Capability::Move},       {"gather", Capability::Gather}, {"build", Capability::Build},
+        {"attack", Capability::Attack},   {"convert", Capability::Convert}, {"heal", Capability::Heal},
+        {"morph", Capability::Morph},     {"garrison", Capability::Garrison}};
+    for (const auto& [name, cap] : kNames) {
+        if (s == name) return cap;
+    }
+    throw DataError(where + ": capability desconocida '" + s + "' (move, gather, build, attack, convert, heal, morph, garrison)");
+}
+
+}  // namespace
+
+// ─── ActionConfig ────────────────────────────────────────────────────────────
+
+ActionConfig merge_config(const ActionConfig& base, const ActionConfig& extra) {
+    if (base.index() != extra.index()) return extra;
+    return std::visit(
+        [&](const auto& a) -> ActionConfig {
+            using T = std::decay_t<decltype(a)>;
+            const T& b = std::get<T>(extra);
+            T out = a;
+            if constexpr (std::is_same_v<T, BuildConfig>) {
+                // Unión de lo que puede construir
+                for (auto t : b.buildable) {
+                    if (std::find(out.buildable.begin(), out.buildable.end(), t) == out.buildable.end()) out.buildable.push_back(t);
+                }
+            } else if constexpr (std::is_same_v<T, ConvertConfig>) {
+                out.classes.bits |= b.classes.bits;
+                out.buildings = a.buildings || b.buildings;
+                out.time_mult = std::min(a.time_mult, b.time_mult);
+                out.range = std::max(a.range, b.range);
+            } else if constexpr (std::is_same_v<T, MorphConfig>) {
+                out = b;  // la última forma manda
+            } else if constexpr (std::is_same_v<T, HealConfig>) {
+                out.classes.bits |= b.classes.bits;
+                out.range = std::max(a.range, b.range);
+                out.per_second = std::max(a.per_second, b.per_second);
+            } else if constexpr (std::is_same_v<T, GarrisonConfig>) {
+                out.classes.bits |= b.classes.bits;
+                out.capacity = std::max(a.capacity, b.capacity);
+                out.arrows_per_unit = std::max(a.arrows_per_unit, b.arrows_per_unit);
+            }
+            return out;
+        },
+        base);
+}
+
+ActionConfig DataRegistry::parse_action_config(Capability cap, const json& j, const std::string& where) const {
+    auto classes = [&](const char* field) {
+        ClassSet out;
+        for (const auto& c : j.value(field, json::array())) {
+            auto id = find_class(c.get<std::string>());
+            if (!id) throw DataError(where + ": clase desconocida '" + c.get<std::string>() + "'");
+            out.add(*id);
+        }
+        return out;
+    };
+    switch (cap) {
+    case Capability::Build: {
+        BuildConfig c;
+        for (const auto& k : j.value("buildable", json::array())) c.buildable.push_back(type(k.get<std::string>()));
+        return c;
+    }
+    case Capability::Convert: {
+        ConvertConfig c;
+        c.classes = classes("classes");
+        c.buildings = j.value("buildings", false);
+        c.time_mult = core::Fixed::from_double(j.value("time_mult", 1.0));
+        c.range = core::Fixed::from_double(j.value("range", 1.0));
+        return c;
+    }
+    case Capability::Morph: {
+        MorphConfig c;
+        c.target = type(j.at("into").get<std::string>());
+        c.consume = j.value("consume", true);
+        c.keep_hp_percent = j.value("keep_hp_percent", true);
+        return c;
+    }
+    case Capability::Heal: {
+        HealConfig c;
+        c.classes = classes("classes");
+        c.range = core::Fixed::from_double(j.value("range", 4.0));
+        c.per_second = core::Fixed::from_double(j.value("per_second", 1.0));
+        return c;
+    }
+    case Capability::Garrison: {
+        GarrisonConfig c;
+        c.classes = classes("classes");
+        c.capacity = j.value("capacity", 0);
+        c.arrows_per_unit = j.value("arrows_per_unit", 1);
+        return c;
+    }
+    default: throw DataError(where + ": esa capability no tiene configuración");
+    }
+}
+
+const TriggerTemplate* DataRegistry::find_trigger(std::string_view id) const {
+    auto it = triggers_.find(id);
+    return it == triggers_.end() ? nullptr : &it->second;
+}
+
+const SkillTemplate* DataRegistry::find_skill(std::string_view id) const {
+    auto it = skills_.find(id);
+    return it == skills_.end() ? nullptr : &it->second;
+}
+
+void DataRegistry::validate_references(const Modifier& m, const std::string& where) const {
+    for (const auto& om : m.object_mods) {
+        for (const auto* t : {&om.grant_trigger, &om.remove_trigger}) {
+            if (!t->empty() && !find_trigger(*t)) throw DataError(where + ": trigger '" + *t + "' no existe en data/triggers");
+        }
+        for (const auto* s : {&om.grant_skill, &om.remove_skill}) {
+            if (!s->empty() && !find_skill(*s)) throw DataError(where + ": skill '" + *s + "' no existe en data/skills");
+        }
+    }
+}
+
+namespace {
 }  // namespace
 
 std::optional<TypeId> DataRegistry::find_type(std::string_view key) const {
@@ -139,7 +261,7 @@ Modifier DataRegistry::parse_modifier(const json& j, const std::string& where) c
         if (!id) throw DataError(where + ": modificador con clase desconocida '" + c.get<std::string>() + "'");
         m.target_classes.add(*id);
     }
-    for (const auto& s : j.at("stats")) {
+    for (const auto& s : j.value("stats", json::array())) {
         StatModifier sm;
         const std::string stat = s.at("stat").get<std::string>();
         if (stat == "max_hp") sm.stat = StatTag::MaxHp;
@@ -176,6 +298,21 @@ Modifier DataRegistry::parse_modifier(const json& j, const std::string& where) c
         sm.value = core::Fixed::from_double(value);
         sm.priority = static_cast<int16_t>(s.value("priority", 0));
         m.stats.push_back(sm);
+    }
+    // Cambios de capacidades, triggers y habilidades
+    for (const auto& o : j.value("object_mods", json::array())) {
+        ObjectModifier om;
+        if (o.contains("grant")) om.grant = parse_capability(o.at("grant").get<std::string>(), where);
+        if (o.contains("remove")) om.remove = parse_capability(o.at("remove").get<std::string>(), where);
+        if (o.contains("config")) {
+            if (!om.grant) throw DataError(where + ": object_mods: config necesita grant");
+            om.config = parse_action_config(*om.grant, o.at("config"), where);
+        }
+        om.grant_trigger = o.value("grant_trigger", std::string());
+        om.remove_trigger = o.value("remove_trigger", std::string());
+        om.grant_skill = o.value("grant_skill", std::string());
+        om.remove_skill = o.value("remove_skill", std::string());
+        m.object_mods.push_back(std::move(om));
     }
     return m;
 }
@@ -262,6 +399,12 @@ DataRegistry DataRegistry::load(const fs::path& data_dir) {
 
     std::vector<std::pair<std::vector<std::string>, std::vector<std::string>>> pending_refs;  // trains, builds
     std::vector<std::string> pending_projectiles;
+    struct PendingConfig {
+        std::size_t sheet;
+        Capability cap;
+        json body;
+    };
+    std::vector<PendingConfig> pending_configs;  // pueden referenciar tipos que aún no se han cargado
     for (const auto& key : order) {
         std::vector<std::string> chain;
         const json& j = resolve(key, chain);
@@ -282,12 +425,7 @@ DataRegistry DataRegistry::load(const fs::path& data_dir) {
                 s.stats.classes.add(*id);
             }
             for (const auto& c : j.value("capabilities", json::array())) {
-                const std::string cap = c.get<std::string>();
-                if (cap == "move") s.stats.capabilities.set(static_cast<std::size_t>(Capability::Move));
-                else if (cap == "gather") s.stats.capabilities.set(static_cast<std::size_t>(Capability::Gather));
-                else if (cap == "build") s.stats.capabilities.set(static_cast<std::size_t>(Capability::Build));
-                else if (cap == "attack") s.stats.capabilities.set(static_cast<std::size_t>(Capability::Attack));
-                else throw DataError(where + ": capability desconocida '" + cap + "' (move, gather, build, attack)");
+                s.stats.capabilities.set(static_cast<std::size_t>(parse_capability(c.get<std::string>(), where)));
             }
             s.stats.max_hp = j.value("hp", 1);
             s.stats.move_speed = core::Fixed::from_double(j.value("speed", 0.0));
@@ -390,6 +528,15 @@ DataRegistry DataRegistry::load(const fs::path& data_dir) {
 
             pending_refs.emplace_back(j.value("trains", std::vector<std::string>{}), j.value("builds", std::vector<std::string>{}));
             pending_projectiles.push_back(j.value("projectile", std::string()));
+
+            // ─── Mutabilidad (las referencias a triggers y skills se comprueban al final) ─
+            const json configs = j.value("action_configs", json::object());  // local: .items() sobre un temporal quedaría colgando
+            for (const auto& [cap_name, cfg] : configs.items()) {
+                const Capability cap = parse_capability(cap_name, where);
+                pending_configs.push_back({reg.sheets_.size(), cap, cfg});
+            }
+            s.triggers = j.value("triggers", std::vector<std::string>{});
+            s.skills = j.value("skills", std::vector<std::string>{});
             reg.type_by_key_.emplace(s.key, s.type);
             reg.sheets_.push_back(std::move(s));
         } catch (const json::exception& e) {
@@ -415,6 +562,91 @@ DataRegistry DataRegistry::load(const fs::path& data_dir) {
         if (!pending_projectiles[i].empty()) s.stats.projectile = refs({pending_projectiles[i]}, EntityKind::Projectile, "projectile").front();
     }
 
+
+    // Configuración de cada capability (ya se conocen todos los tipos)
+    for (const auto& pc : pending_configs) {
+        ObjSheet& s = reg.sheets_[pc.sheet];
+        s.action_configs.emplace_back(pc.cap, reg.parse_action_config(pc.cap, pc.body, raw.at(s.key).file));
+    }
+
+    // ─── Triggers (data/triggers) ────────────────────────────────────────
+    for (const auto& path : json_files_in(data_dir / "triggers")) {
+        const std::string where = path.string();
+        const json j = read_json(path);
+        try {
+            TriggerTemplate t;
+            t.id = j.at("id").get<std::string>();
+            const std::string ev = j.at("event").get<std::string>();
+            if (ev == "on_death") t.event = TriggerEvent::OnDeath;
+            else if (ev == "on_kill") t.event = TriggerEvent::OnKill;
+            else if (ev == "on_hit") t.event = TriggerEvent::OnHit;
+            else if (ev == "on_spawn") t.event = TriggerEvent::OnSpawn;
+            else if (ev == "on_convert") t.event = TriggerEvent::OnConvert;
+            else throw DataError(where + ": evento desconocido '" + ev + "' (on_death, on_kill, on_hit, on_spawn, on_convert)");
+            for (const auto& c : j.value("filter_classes", json::array())) {
+                auto id = reg.find_class(c.get<std::string>());
+                if (!id) throw DataError(where + ": clase desconocida '" + c.get<std::string>() + "'");
+                t.filter_classes.add(*id);
+            }
+            t.probability_permille = static_cast<uint16_t>(std::clamp(j.value("probability", 1.0), 0.0, 1.0) * 1000.0 + 0.5);
+            t.charges = j.value("charges", -1);
+            for (const auto& sp : j.value("spawn", json::array())) {
+                SpawnEffect e;
+                e.type = reg.type(sp.at("type").get<std::string>());
+                e.count = sp.value("count", 1);
+                e.inherit_original = sp.value("inherit_original", true);
+                e.inherit_current = sp.value("inherit_current", true);
+                e.hp_fraction = core::Fixed::from_double(sp.value("hp_fraction", 1.0));
+                t.spawns.push_back(e);
+            }
+            for (const auto& r : j.value("resources", json::array())) {
+                t.resources.push_back({parse_resource(r.at("type").get<std::string>(), where), r.at("amount").get<int32_t>(),
+                                       r.value("to_original", false)});
+            }
+            for (const auto& m : j.value("self_modifiers", json::array())) t.self_modifiers.push_back(reg.parse_modifier(m, where));
+            if (reg.triggers_.count(t.id)) throw DataError(where + ": trigger repetido '" + t.id + "'");
+            reg.triggers_.emplace(t.id, std::move(t));
+        } catch (const json::exception& e) {
+            throw DataError(where + ": " + e.what());
+        }
+    }
+
+    // ─── Habilidades (data/skills) ───────────────────────────────────────
+    for (const auto& path : json_files_in(data_dir / "skills")) {
+        const std::string where = path.string();
+        const json j = read_json(path);
+        try {
+            SkillTemplate s;
+            s.id = j.at("id").get<std::string>();
+            s.name = j.value("name", s.id);
+            s.description = j.value("description", std::string());
+            const std::string b = j.at("behavior").get<std::string>();
+            if (b == "morph") s.behavior = SkillBehavior::Morph;
+            else if (b == "heal_aura") s.behavior = SkillBehavior::HealAura;
+            else if (b == "stat_boost") s.behavior = SkillBehavior::StatBoost;
+            else throw DataError(where + ": behavior desconocido '" + b + "' (morph, heal_aura, stat_boost)");
+            s.cooldown_ticks = static_cast<uint32_t>(std::llround(j.value("cooldown", 30.0) * kTicksPerSecondData));
+            s.duration_ticks = static_cast<uint32_t>(std::llround(j.value("duration", 0.0) * kTicksPerSecondData));
+            s.radius = core::Fixed::from_double(j.value("radius", 4.0));
+            s.heal_per_second = core::Fixed::from_double(j.value("heal_per_second", 0.0));
+            for (const auto& m : j.value("modifiers", json::array())) s.modifiers.push_back(reg.parse_modifier(m, where));
+            if (reg.skills_.count(s.id)) throw DataError(where + ": skill repetida '" + s.id + "'");
+            reg.skills_.emplace(s.id, std::move(s));
+        } catch (const json::exception& e) {
+            throw DataError(where + ": " + e.what());
+        }
+    }
+
+    // Las fichas solo pueden nombrar triggers y skills que existen
+    for (const auto& s : reg.sheets_) {
+        const std::string& where = raw.at(s.key).file;
+        for (const auto& t : s.triggers) {
+            if (!reg.find_trigger(t)) throw DataError(where + ": trigger '" + t + "' no existe en data/triggers");
+        }
+        for (const auto& k : s.skills) {
+            if (!reg.find_skill(k)) throw DataError(where + ": skill '" + k + "' no existe en data/skills");
+        }
+    }
     // ─── Tecnologías (data/techs) ────────────────────────────────────────
     {
         std::vector<std::pair<json, std::string>> raw_techs;
@@ -491,6 +723,11 @@ DataRegistry DataRegistry::load(const fs::path& data_dir) {
         }
     }
     if (reg.civs_.empty()) reg.civs_.push_back(CivTemplate{"default", "Sin civilización", "", {}, {}, {}, {}});
+
+    // Los modificadores de tecnologías, civilizaciones y habilidades solo pueden nombrar triggers y skills que existen
+    for (const auto& t : reg.techs_) for (const auto& m : t.modifiers) reg.validate_references(m, "data/techs/" + t.key);
+    for (const auto& c : reg.civs_) for (const auto& m : c.bonuses) reg.validate_references(m, "data/civs/" + c.key);
+    for (const auto& [id, s] : reg.skills_) for (const auto& m : s.modifiers) reg.validate_references(m, "data/skills/" + id);
 
     // ─── Partida inicial ─────────────────────────────────────────────────
     {

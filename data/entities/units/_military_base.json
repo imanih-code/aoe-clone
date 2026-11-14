@@ -3,7 +3,7 @@
   "key": "_military_base",
   "extends": "_unit_base",
   "abstract": true,
-  "capabilities": ["move", "attack"],
+  "capabilities": ["move", "attack", "garrison"],
   "aggressive": true,
   "sight": 5
 }

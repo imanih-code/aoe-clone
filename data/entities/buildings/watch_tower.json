@@ -17,5 +17,6 @@
   "build_time": 80,
   "age": 1,
   "armor": { "melee": 1, "pierce": 7, "building": 0 },
+  "action_configs": { "garrison": { "classes": ["villager", "infantry", "archer", "monk"], "capacity": 5, "arrows_per_unit": 1 } },
   "visual": { "height": 2.4, "label": "Torre" }
 }

@@ -1,0 +1,7 @@
+{
+  "id": "ritual_sacrifice",
+  "name": "Ritual del sacrificio",
+  "description": "El guerrero se sacrifica: en su lugar se alza una Torre del ritual.",
+  "behavior": "morph",
+  "cooldown": 5
+}

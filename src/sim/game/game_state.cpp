@@ -40,6 +40,8 @@ void GameState::step(std::span<const Command> commands) {
     for (const Command& cmd : commands) apply_command(cmd);
     production_system();
     animal_system();       // animales: huir, deambular, ganado que cambia de dueño
+    skill_system();        // enfriamientos, auras y efectos temporales que caducan
+    heal_system();         // sanadores ociosos atienden a los heridos
     action_system();       // mover, recolectar, construir, atacar (el daño se acumula)
     projectile_system();   // las flechas en vuelo avanzan e impactan
     resolve_damage();      // se aplica todo el daño a la vez: dos que se matan, mueren los dos
@@ -89,17 +91,17 @@ PathQuery GameState::path_query(const SpawnableEntity& e) const {
 // ─── Comandos ────────────────────────────────────────────────────────────────
 
 std::unique_ptr<IAction> GameState::make_action(SpawnableEntity& e, const Order& order) {
-    const auto& s = sheet_of(e);
+    if (e.garrisoned_in) return nullptr;  // dentro de un edificio no se hace nada
     switch (order.type) {
     case CommandType::Move:
-        if (s.can_move()) return std::make_unique<MoveAction>(order.pos);
+        if (can_move(e)) return std::make_unique<MoveAction>(order.pos);
         break;
     case CommandType::AttackMove:
-        if (s.can_move()) return std::make_unique<AttackMoveAction>(order.pos);
+        if (can_move(e)) return std::make_unique<AttackMoveAction>(order.pos);
         break;
     case CommandType::Gather: {
         const SpawnableEntity* t = entities_.get(order.target);
-        if (!t || !s.stats.has(data::Capability::Gather)) break;
+        if (!t || !has_cap(e, data::Capability::Gather)) break;
         const auto& st = stats_of(e);
         if (t->resource_node) {
             const auto res = t->resource_node->resource;
@@ -111,14 +113,29 @@ std::unique_ptr<IAction> GameState::make_action(SpawnableEntity& e, const Order&
     }
     case CommandType::Build: {
         const SpawnableEntity* t = entities_.get(order.target);
-        if (t && !t->is_complete() && t->current_player == e.current_player && s.stats.has(data::Capability::Build)) {
+        if (t && !t->is_complete() && t->current_player == e.current_player && has_cap(e, data::Capability::Build)) {
             return std::make_unique<BuildAction>(order.target);
         }
         break;
     }
     case CommandType::Attack: {
         const SpawnableEntity* t = entities_.get(order.target);
-        if (t && s.can_attack() && can_target(e, *t)) return std::make_unique<AttackAction>(order.target, false);
+        if (t && can_attack(e) && can_target(e, *t)) return std::make_unique<AttackAction>(order.target, false);
+        break;
+    }
+    case CommandType::Convert: {
+        const SpawnableEntity* t = entities_.get(order.target);
+        if (t && can_convert(e, *t)) return std::make_unique<ConvertAction>(order.target);
+        break;
+    }
+    case CommandType::Heal: {
+        const SpawnableEntity* t = entities_.get(order.target);
+        if (t && can_heal(e, *t)) return std::make_unique<HealAction>(order.target);
+        break;
+    }
+    case CommandType::Garrison: {
+        const SpawnableEntity* t = entities_.get(order.target);
+        if (t && can_garrison(e, *t)) return std::make_unique<GarrisonAction>(order.target);
         break;
     }
     default: break;
@@ -148,7 +165,7 @@ void GameState::apply_command(const Command& cmd) {
     actors.erase(std::unique(actors.begin(), actors.end()), actors.end());
     if (actors.empty()) return;
 
-    auto movable = [&](core::EntityHandle h) { return sheet_of(*entities_.get(h)).can_move(); };
+    auto movable = [&](core::EntityHandle h) { return can_move(*entities_.get(h)); };
 
     switch (cmd.type) {
     case CommandType::Stop:
@@ -181,7 +198,7 @@ void GameState::apply_command(const Command& cmd) {
             SpawnableEntity& e = *entities_.get(h);
             auto probe = make_action(e, order);  // ¿puede recolectar esto?
             if (probe) give_order(e, order, cmd.queued);
-            else if (sheet_of(e).can_move()) others.push_back(h);
+            else if (can_move(e)) others.push_back(h);
         }
         command_move(others, node->position, false, cmd.queued);
         break;
@@ -192,7 +209,7 @@ void GameState::apply_command(const Command& cmd) {
         if (!site || site->is_complete() || site->current_player != cmd.issuer) break;
         for (auto h : actors) {
             SpawnableEntity& e = *entities_.get(h);
-            if (sheet_of(e).stats.has(data::Capability::Build)) give_order(e, {CommandType::Build, cmd.target, site->position, {}}, cmd.queued);
+            if (has_cap(e, data::Capability::Build)) give_order(e, {CommandType::Build, cmd.target, site->position, {}}, cmd.queued);
         }
         break;
     }
@@ -238,12 +255,40 @@ void GameState::apply_command(const Command& cmd) {
         const Order order{CommandType::Attack, cmd.target, target->position, {}};
         for (auto h : actors) {
             SpawnableEntity& e = *entities_.get(h);
-            if (sheet_of(e).can_attack() && can_target(e, *target)) give_order(e, order, cmd.queued);
-            else if (sheet_of(e).can_move()) others.push_back(h);
+            if (can_attack(e) && can_target(e, *target)) give_order(e, order, cmd.queued);
+            else if (can_move(e)) others.push_back(h);
         }
         command_move(others, target->position, false, cmd.queued);
         break;
     }
+
+    case CommandType::Convert:
+    case CommandType::Heal: {
+        const SpawnableEntity* target = entities_.get(cmd.target);
+        if (!target || !is_visible_to(cmd.issuer, *target)) break;
+        const Order order{cmd.type, cmd.target, target->position, {}};
+        for (auto h : actors) {
+            SpawnableEntity& e = *entities_.get(h);
+            if (make_action(e, order)) give_order(e, order, cmd.queued);
+        }
+        break;
+    }
+
+    case CommandType::Garrison: {
+        const SpawnableEntity* building = entities_.get(cmd.target);
+        if (!building) break;
+        const Order order{CommandType::Garrison, cmd.target, building->position, {}};
+        for (auto h : actors) give_order(*entities_.get(h), order, cmd.queued);
+        break;
+    }
+
+    case CommandType::Ungarrison:
+        for (auto h : actors) ungarrison(h);
+        break;
+
+    case CommandType::UseSkill:
+        for (auto h : actors) use_skill(*entities_.get(h), static_cast<std::size_t>(std::max(0, cmd.index)));
+        break;
 
     case CommandType::CancelTrain: {
         SpawnableEntity& b = *entities_.get(actors.front());
@@ -288,7 +333,7 @@ void GameState::command_place_building(const Command& cmd, const std::vector<cor
     if (players_[cmd.issuer].age < sheet.stats.min_age || is_disabled(cmd.issuer, cmd.type_arg)) return;
     std::vector<core::EntityHandle> builders;
     for (auto h : actors) {
-        if (sheet_of(*entities_.get(h)).can_build(cmd.type_arg)) builders.push_back(h);
+        if (can_build(*entities_.get(h), cmd.type_arg)) builders.push_back(h);
     }
     if (builders.empty() || !can_place(cmd.type_arg, cmd.tile) || !can_afford(cmd.issuer, sheet.stats.cost)) return;
     // Solo se construye en terreno explorado (las dos esquinas del footprint)
@@ -369,6 +414,7 @@ void GameState::action_system() {
 
     entities_.for_each([&](core::EntityHandle h, SpawnableEntity& e) {
         e.prev_position = e.position;
+        if (e.garrisoned_in) return;  // dentro de un edificio: quieta
         // Sin acción pero con órdenes en cola: empezar la siguiente (las inválidas se descartan)
         while (!e.action && !e.orders.empty()) {
             const Order next = e.orders.front();
@@ -385,7 +431,8 @@ void GameState::action_system() {
                 e.action = make_action(e, next);
             }
         }
-        if (!(before == e.position)) spatial_.move(h, before, e.position);
+        // Si acaba de entrar en un edificio ya no está en el índice espacial: no volver a meterla
+        if (!(before == e.position) && !e.garrisoned_in) spatial_.move(h, before, e.position);
     });
 }
 
@@ -584,8 +631,10 @@ core::EntityHandle GameState::spawn_now(const SpawnRequest& req) {
     SpawnableEntity e;
     e.type = req.type;
     e.classes = sheet.stats.classes;
-    e.original_player = e.current_player = req.owner;
-    e.hp = stats_for(req.owner, req.type).max_hp;
+    e.current_player = req.owner;
+    e.original_player = req.original_owner.value_or(req.owner);  // un trigger puede heredar el original
+    e.hp = stats_for(e.original_player, req.type).max_hp;
+    if (req.hp_fraction) e.hp = std::max<int32_t>(1, (Fixed::from_int(e.hp) * *req.hp_fraction).floor_int());
 
     if (sheet.is_projectile()) {
         // Proyectil: sin footprint, no bloquea ni cuenta para ningún jugador
@@ -653,12 +702,20 @@ core::EntityHandle GameState::spawn_now(const SpawnRequest& req) {
     if (sheet.is_building()) owner.buildings.push_back(handle);
     owner.population_current += sheet.stats.population_cost;
     if (complete) owner.population_cap = std::min(kMaxPopulation, owner.population_cap + sheet.stats.population_provided);
+    // Trigger al nacer (sus efectos se aplican al final del tick)
+    if (sheet.is_unit() || sheet.is_building()) fire(data::TriggerEvent::OnSpawn, *entities_.get(handle), {});
     return handle;
 }
 
 void GameState::despawn_now(core::EntityHandle h) {
     SpawnableEntity* e = entities_.get(h);
     if (!e) return;
+    // Un edificio que cae suelta a los de dentro; una unidad que muere dentro sale de la lista
+    if (!e->garrison.empty()) {
+        ungarrison(h);
+        e = entities_.get(h);
+    }
+    if (SpawnableEntity* holder = entities_.get(e->garrisoned_in)) std::erase(holder->garrison, h);
     const data::ObjSheet& sheet = data_.sheet(e->type);
     if (!sheet.is_unit() && !sheet.is_projectile()) {
         map_.remove_blocker(e->anchor.x, e->anchor.y, sheet.stats.footprint_w, sheet.stats.footprint_h, !sheet.stats.walkable);
@@ -678,8 +735,10 @@ void GameState::apply_pending() {
     // Un mismo handle puede pedirse dos veces en un tick (p. ej. dos aldeanos agotan el mismo árbol)
     for (core::EntityHandle h : pending_despawns_) despawn_now(h);
     pending_despawns_.clear();
-    for (const SpawnRequest& req : pending_spawns_) spawn_now(req);
-    pending_spawns_.clear();
+    // Se vacía antes: si un spawn dispara on_spawn y pide más, van al tick siguiente (sin cadenas infinitas)
+    std::vector<SpawnRequest> spawns;
+    spawns.swap(pending_spawns_);
+    for (const SpawnRequest& req : spawns) spawn_now(req);
 }
 
 void GameState::displace_units_from(core::TilePos anchor, int w, int h) {
@@ -727,6 +786,7 @@ uint64_t GameState::state_hash() const {
         mix(static_cast<uint32_t>(e.position.y.raw));
         mix(static_cast<uint32_t>(e.hp));
         mix(static_cast<uint32_t>(e.carry.amount.raw));
+        mix(e.garrisoned_in.index);
         if (e.resource_node) mix(static_cast<uint32_t>(e.resource_node->amount_remaining));
     });
     return h;

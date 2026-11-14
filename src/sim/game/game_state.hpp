@@ -39,6 +39,8 @@ struct SpawnRequest {
     bool as_construction_site = false;
     std::optional<core::Vec2F> exact_position;  // proyectiles
     std::optional<int32_t> resource_amount;      // carne de un animal: la cantidad la fija el animal
+    std::optional<data::PlayerId> original_owner;  // triggers: hereda el original_player de quien lo crea
+    std::optional<core::Fixed> hp_fraction;        // triggers: nace con parte de la vida
     bool nearby_ok = false;                      // si el tile está ocupado, vale uno libre cercano
     std::optional<ProjectileData> projectile;
 };
@@ -81,11 +83,27 @@ public:
     // ─── Stats efectivos (ficha + bonus de civ + tecnologías del jugador) ─
     const data::EntityStats& stats_for(data::PlayerId p, data::TypeId t) const;
     // Siempre contra original_player (architecture.md §3)
-    const data::EntityStats& stats_of(const SpawnableEntity& e) const { return stats_for(e.original_player, e.type); }
+    // (más los modificadores de la propia entidad: habilidades, triggers)
+    const data::EntityStats& stats_of(const SpawnableEntity& e) const;
+
+    // ─── Capabilities dinámicas (mutability.md) ──────────────────────────
+    const CapabilityCache& caps_of(const SpawnableEntity& e) const;
+    bool has_cap(const SpawnableEntity& e, data::Capability c) const { return caps_of(e).caps.test(static_cast<std::size_t>(c)); }
+    const data::ActionConfig* config_of(const SpawnableEntity& e, data::Capability c) const;
+    bool can_move(const SpawnableEntity& e) const;
+    bool can_attack(const SpawnableEntity& e) const;
+    bool can_build(const SpawnableEntity& e, data::TypeId building) const;
+    bool can_convert(const SpawnableEntity& converter, const SpawnableEntity& target) const;
+    bool can_heal(const SpawnableEntity& healer, const SpawnableEntity& target) const;
+    bool can_garrison(const SpawnableEntity& unit, const SpawnableEntity& building) const;
+    const data::GarrisonConfig* garrison_config(const SpawnableEntity& building) const;
+    // Habilidades que tiene ahora (ids) y su estado
+    const std::vector<std::string>& skills_of(const SpawnableEntity& e) const { return caps_of(e).skills; }
+    uint32_t skill_cooldown(const SpawnableEntity& e, const std::string& id) const;
 
     // ─── Lo que un jugador puede hacer (civ, mejoras, edad) ─────────────
     std::vector<data::TypeId> trainable_at(data::PlayerId p, data::TypeId building) const;
-    std::vector<data::TypeId> buildable_by(data::PlayerId p, const data::ObjSheet& unit) const;
+    std::vector<data::TypeId> buildable_by(data::PlayerId p, const SpawnableEntity& unit) const;
     std::vector<data::TechId> techs_at(data::PlayerId p, data::TypeId building) const;
     TechStatus tech_status(data::PlayerId p, data::TechId t) const;
     bool is_disabled(data::PlayerId p, data::TypeId t) const;
@@ -112,6 +130,7 @@ public:
 
     // ─── Para tests y futuras herramientas (editor, escenarios) ──────────
     void debug_destroy_player(data::PlayerId p);
+    void debug_apply_modifier(data::PlayerId p, const data::Modifier& m);
     core::EntityHandle debug_spawn(data::TypeId type, data::PlayerId owner, core::TilePos tile);
     void debug_complete_research(data::PlayerId p, data::TechId t) { complete_research(p, t); }
     void debug_set_resources(data::PlayerId p, const data::ResourceArray& r) { players_.at(p).resources = r; }
@@ -147,6 +166,13 @@ public:
     void request_despawn(core::EntityHandle h) { pending_despawns_.push_back(h); }
     // Golpe cuerpo a cuerpo (daño acumulado) o disparo (proyectil que se crea al final del tick)
     void perform_attack(const SpawnableEntity& attacker, const SpawnableEntity& target);
+    // Cambio de dueño por conversión: dispara on_convert en quien convierte
+    void convert_entity(core::EntityHandle target, data::PlayerId new_owner, core::EntityHandle by);
+    bool garrison(core::EntityHandle unit, core::EntityHandle building);
+    void ungarrison(core::EntityHandle building);
+    bool use_skill(SpawnableEntity& e, std::size_t index);
+    void fire(data::TriggerEvent event, SpawnableEntity& source, core::EntityHandle related);
+    void add_instance_modifier(SpawnableEntity& e, const data::Modifier& m, uint32_t until_tick);
 
 private:
     // ─── Montaje de la partida (map_generation.cpp) ──────────────────────
@@ -174,6 +200,8 @@ private:
     std::unique_ptr<IAction> make_action(SpawnableEntity& e, const Order& order);
     void convert(core::EntityHandle h, data::PlayerId new_owner);
     void animal_system();
+    void skill_system();
+    void heal_system();
     void command_place_building(const Command& cmd, const std::vector<core::EntityHandle>& actors);
     void production_system();
     void action_system();

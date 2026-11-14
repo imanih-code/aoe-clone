@@ -1,0 +1,14 @@
+{
+  // Caso 1 de mutability.md: la infantería aprende a construir torres de vigía (y nada más)
+  "key": "field_engineering",
+  "name": "Ingeniería de campo",
+  "description": "La infantería puede construir torres de vigía.",
+  "researched_at": "barracks",
+  "cost": { "food": 150, "wood": 100 },
+  "time": 40,
+  "age": 1,
+  "modifiers": [
+    { "id": "field_engineering", "classes": ["infantry"],
+      "object_mods": [ { "grant": "build", "config": { "buildable": ["watch_tower"] } } ] }
+  ]
+}

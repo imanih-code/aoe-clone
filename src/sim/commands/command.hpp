@@ -21,6 +21,11 @@ enum class CommandType : uint8_t {
     Attack,         // actors → target (enemigo)
     Research,       // actors[0] (edificio), index = TechId
     AttackMove,     // actors → target_pos, atacando lo que encuentren por el camino
+    Convert,        // actors → target (enemigo): monjes y quien tenga la capability convert
+    Heal,           // actors → target (unidad propia herida)
+    Garrison,       // actors → target (edificio propio que acepta guarnición)
+    Ungarrison,     // actors (edificios): sacar a todos
+    UseSkill,       // actors, index = posición de la habilidad
 };
 
 // Única forma de cambiar la simulación desde fuera (jugador o IA).

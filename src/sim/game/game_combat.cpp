@@ -78,15 +78,6 @@ std::vector<data::TypeId> GameState::trainable_at(data::PlayerId p, data::TypeId
     return out;
 }
 
-std::vector<data::TypeId> GameState::buildable_by(data::PlayerId p, const data::ObjSheet& unit) const {
-    std::vector<data::TypeId> out;
-    if (!unit.stats.has(data::Capability::Build)) return out;
-    for (data::TypeId t : unit.builds) {
-        if (!is_disabled(p, t)) out.push_back(t);
-    }
-    return out;
-}
-
 TechStatus GameState::tech_status(data::PlayerId p, data::TechId t) const {
     const PlayerState& ps = players_.at(p);
     const auto& tech = data_.tech(t);
@@ -124,6 +115,7 @@ std::vector<data::TechId> GameState::techs_at(data::PlayerId p, data::TypeId bui
 void GameState::retype(SpawnableEntity& e, data::TypeId to) {
     const int32_t old_max = stats_of(e).max_hp;
     e.type = to;
+    ++e.instance_version;  // la caché de capabilities y stats propios se recalcula
     e.classes = data_.sheet(to).stats.classes;
     const int32_t new_max = stats_of(e).max_hp;
     if (old_max > 0) e.hp = std::max<int32_t>(1, static_cast<int32_t>(static_cast<int64_t>(e.hp) * new_max / old_max));
@@ -166,7 +158,7 @@ void GameState::complete_research(data::PlayerId p, data::TechId t) {
 
 bool GameState::is_enemy(const SpawnableEntity& a, const SpawnableEntity& b) const {
     if (a.current_player == b.current_player) return false;
-    if (b.projectile || b.hp <= 0) return false;
+    if (b.projectile || b.hp <= 0 || b.garrisoned_in) return false;  // dentro de un edificio no se le puede atacar
     const auto animal = [&](const SpawnableEntity& x) { return sheet_of(x).stats.animal; };
     if (a.current_player == data::kGaia) {
         // Un lobo ve enemigos en todas las unidades de los jugadores; un jabalí, en quien lo hiere
@@ -252,12 +244,19 @@ void GameState::perform_attack(const SpawnableEntity& attacker, const SpawnableE
     const auto& as = stats_of(attacker);
     const int32_t damage = data::compute_damage(as, stats_of(target));
     if (as.projectile) {
-        SpawnRequest req;
-        req.type = *as.projectile;
-        req.owner = data::kGaia;
-        req.exact_position = attacker.position;
-        req.projectile = ProjectileData{attacker.self, target.self, target.position, damage, attacker.current_player, attacker.type};
-        pending_spawns_.push_back(std::move(req));
+        // Un edificio con guarnición dispara una flecha más por cada unidad dentro (con tope)
+        int volley = 1;
+        if (const auto* g = garrison_config(attacker); g && sheet_of(attacker).is_building()) {
+            volley += std::min(8, static_cast<int>(attacker.garrison.size()) * g->arrows_per_unit);
+        }
+        for (int i = 0; i < volley; ++i) {
+            SpawnRequest req;
+            req.type = *as.projectile;
+            req.owner = data::kGaia;
+            req.exact_position = attacker.position;
+            req.projectile = ProjectileData{attacker.self, target.self, target.position, damage, attacker.current_player, attacker.type};
+            pending_spawns_.push_back(std::move(req));
+        }
     } else {
         damage_.push_back({target.self, attacker.self, damage, attacker.current_player, attacker.type});
     }
@@ -304,6 +303,12 @@ void GameState::resolve_damage() {
             players_[ev.attacker_player].kills_by_type[victim->type]++;
             players_[victim->current_player].losses_by_type[victim->type]++;
             request_despawn(ev.target);
+            // Triggers: al morir (la víctima) y al matar (el atacante, si sigue vivo)
+            fire(data::TriggerEvent::OnDeath, *victim, ev.source);
+            if (SpawnableEntity* killer = entities_.get(ev.source); killer && killer->hp > 0) {
+                fire(data::TriggerEvent::OnKill, *killer, ev.target);
+            }
+            victim = entities_.get(ev.target);  // fire no crea entidades ahora, pero mejor no fiarse del puntero
             // Un animal cazado deja carne donde cayó
             const int32_t food = sheet_of(*victim).stats.carcass_food;
             if (food > 0 && carcass_type_) {
@@ -317,10 +322,12 @@ void GameState::resolve_damage() {
             }
             continue;
         }
+        fire(data::TriggerEvent::OnHit, *victim, ev.source);
+        victim = entities_.get(ev.target);
         // Represalia: una unidad militar ociosa responde a quien la ataca, y un jabalí
         // herido se revuelve aunque esté huyendo o deambulando
         const SpawnableEntity* attacker = entities_.get(ev.source);
-        if (!attacker || attacker->hp <= 0 || !sheet_of(*victim).can_attack() || !is_enemy(*victim, *attacker)) continue;
+        if (!attacker || attacker->hp <= 0 || !can_attack(*victim) || !is_enemy(*victim, *attacker)) continue;
         const bool retaliates = sheet_of(*victim).stats.animal == data::AnimalBehavior::Retaliate;
         const bool busy = victim->action && victim->action->kind() == ActionKind::Attack;
         if ((retaliates && !busy) || (!victim->action && stats_of(*victim).aggressive)) {
@@ -334,10 +341,10 @@ void GameState::resolve_damage() {
 void GameState::auto_attack_system() {
     // Cada entidad mira a su alrededor una vez cada 8 ticks (escalonado por índice)
     entities_.for_each([&](core::EntityHandle h, SpawnableEntity& e) {
-        if ((h.index + tick_) % 8 != 0 || e.action || e.hp <= 0 || e.construction || e.projectile) return;
+        if ((h.index + tick_) % 8 != 0 || e.action || e.hp <= 0 || e.construction || e.projectile || e.garrisoned_in) return;
         if (e.current_player == data::kGaia && sheet_of(e).stats.animal != data::AnimalBehavior::Aggressive) return;  // de Gaia, solo los lobos
         const auto& sheet = sheet_of(e);
-        if (!sheet.can_attack()) return;
+        if (!can_attack(e)) return;
         const auto& s = stats_of(e);
         if (!s.aggressive) return;
         const int radius = std::max<int>(s.sight, (s.range + Fixed::from_int(1)).floor_int() + (sheet.is_building() ? sheet.stats.footprint_w / 2 : 0));

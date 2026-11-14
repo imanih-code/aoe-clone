@@ -5,6 +5,8 @@
 > **v3**: alineado con `architecture.md` v3. Las referencias guardadas son `EntityHandle`, los dueños `PlayerId`, las clases `ClassSet`. `ActionConfig` pasa a ser un `std::variant` (copiable), los behaviors reciben un `SimContext`, los spawns/despawns se encolan para el final del tick y la probabilidad de los triggers usa el `Rng` determinista. `CapabilityTag` **sí** sigue siendo un enum: cada capability tiene código propio en el motor (su `IActionBehavior`).
 >
 > **Orden de implementación**: este sistema es la fase 6 del [`ROADMAP.md`](ROADMAP.md). Antes hace falta un juego jugable con capabilities fijas; diseñarlo ya está bien, implementarlo primero no.
+>
+> **Estado (2026-11-14)**: implementado (`src/sim/game/game_mutability.cpp`, datos en `data/triggers/`, `data/skills/` y `action_configs` de las fichas). Los casos de uso son tests de integración en `tests/test_mutability.cpp`. Diferencia con este documento: los behaviors siguen como clases `Action` con `GameState&` en lugar de un `SimContext` separado.
 
 ---
 

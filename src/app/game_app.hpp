@@ -28,6 +28,7 @@ struct AppOptions {
     int screenshot_frame = 90;
     bool demo = false;                 // economía automática al empezar (Fase 3)
     bool battle = false;               // dos ejércitos frente a frente (Fase 4)
+    bool showcase = false;             // conversión, guarnición, morph y triggers (Fase 6)
     bool spectate = false;             // todos los jugadores son IA y se ve todo el mapa
     bool reveal = false;               // sin niebla de guerra
     bool no_ai = false;                // los rivales no hacen nada (para probar)
@@ -48,6 +49,7 @@ private:
     void save_replay();
     void start_demo();
     void start_battle();
+    void start_showcase();
     std::optional<data::PlayerId> viewer() const;
 
     AppOptions options_;

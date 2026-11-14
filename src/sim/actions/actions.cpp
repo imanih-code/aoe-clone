@@ -258,8 +258,7 @@ ActionStatus AttackAction::tick(SpawnableEntity& self, GameState& game) {
         return ActionStatus::Running;
     }
 
-    const auto& sheet = game.sheet_of(self);
-    if (!sheet.can_move()) return ActionStatus::Done;  // torres: el objetivo salió del alcance
+    if (!game.can_move(self)) return ActionStatus::Done;  // torres: el objetivo salió del alcance
     // Lo que se decidió solo no se persigue lejos (no arrastrar el ejército por el mapa)
     if (automatic_ && core::length(self.position - origin_) > Fixed::from_int(10)) return ActionStatus::Done;
 
@@ -282,7 +281,7 @@ ActionStatus AttackMoveAction::tick(SpawnableEntity& self, GameState& game) {
         plan_.reset();
     }
     // Mirar alrededor cada 8 ticks (escalonado) por si hay enemigos a la vista
-    if ((game.tick() + self.self.index) % 8 == 0 && game.sheet_of(self).can_attack()) {
+    if ((game.tick() + self.self.index) % 8 == 0 && game.can_attack(self)) {
         const core::EntityHandle enemy = game.find_enemy_near(self, game.stats_of(self).sight);
         if (enemy) {
             engaged_.emplace(enemy, true);
@@ -326,6 +325,86 @@ ActionStatus BuildAction::tick(SpawnableEntity& self, GameState& game) {
         plan_.reset();
         if (++stuck_ > 6) return ActionStatus::Done;
         break;
+    }
+    return ActionStatus::Running;
+}
+
+}  // namespace sim
+
+namespace sim {
+
+// ─── Convertir ───────────────────────────────────────────────────────────────
+
+ActionStatus ConvertAction::tick(SpawnableEntity& self, GameState& game) {
+    const SpawnableEntity* target = game.entity(target_);
+    if (!target || target->hp <= 0 || !game.can_convert(self, *target)) return ActionStatus::Done;
+    const auto& cfg = std::get<data::ConvertConfig>(*game.config_of(self, data::Capability::Convert));
+
+    if (game.distance_to(self, *target) > cfg.range + Fixed::ratio(1, 2)) {
+        done_ = 0;  // se alejó: hay que empezar de nuevo
+        if (!game.can_move(self)) return ActionStatus::Done;
+        if (!plan_ || --repath_ <= 0) {
+            plan_ = game.plan_path(self, target->position);
+            repath_ = 10;
+            if (!plan_) return ActionStatus::Done;
+        }
+        if (game.step_along(self, *plan_) != StepResult::Moving) plan_.reset();
+        return ActionStatus::Running;
+    }
+    plan_.reset();
+    if (needed_ == 0) {
+        // Entre 4 y 8 segundos (por time_mult), con el Rng de la simulación: determinista
+        const uint32_t base = static_cast<uint32_t>(4 * sim::kTicksPerSecond) + game.random(static_cast<uint32_t>(4 * sim::kTicksPerSecond + 1));
+        needed_ = std::max<uint32_t>(1, static_cast<uint32_t>((Fixed::from_int(static_cast<int32_t>(base)) * cfg.time_mult).floor_int()));
+        done_ = 0;
+    }
+    if (++done_ < needed_) return ActionStatus::Running;
+    game.convert_entity(target_, self.current_player, self.self);
+    return ActionStatus::Done;
+}
+
+// ─── Curar ───────────────────────────────────────────────────────────────────
+
+ActionStatus HealAction::tick(SpawnableEntity& self, GameState& game) {
+    SpawnableEntity* target = game.entity_mut(target_);
+    if (!target || !game.can_heal(self, *target)) return ActionStatus::Done;
+    const auto& cfg = std::get<data::HealConfig>(*game.config_of(self, data::Capability::Heal));
+    if (game.distance_to(self, *target) > cfg.range) {
+        if (!game.can_move(self)) return ActionStatus::Done;
+        if (!plan_ || --repath_ <= 0) {
+            plan_ = game.plan_path(self, target->position);
+            repath_ = 10;
+            if (!plan_) return ActionStatus::Done;
+        }
+        if (game.step_along(self, *plan_) != StepResult::Moving) plan_.reset();
+        return ActionStatus::Running;
+    }
+    plan_.reset();
+    pending_ += cfg.per_second / Fixed::from_int(sim::kTicksPerSecond);
+    const int32_t whole = pending_.floor_int();
+    if (whole > 0) {
+        pending_ -= Fixed::from_int(whole);
+        target->hp = std::min(game.stats_of(*target).max_hp, target->hp + whole);
+    }
+    return target->hp >= game.stats_of(*target).max_hp ? ActionStatus::Done : ActionStatus::Running;
+}
+
+// ─── Entrar en un edificio ───────────────────────────────────────────────────
+
+ActionStatus GarrisonAction::tick(SpawnableEntity& self, GameState& game) {
+    const SpawnableEntity* b = game.entity(building_);
+    if (!b || !game.can_garrison(self, *b)) return ActionStatus::Done;
+    if (game.in_reach(self, *b)) {
+        game.garrison(self.self, building_);  // la unidad desaparece dentro: no tocar más `self.action`
+        return ActionStatus::Done;
+    }
+    if (!plan_) {
+        plan_ = game.plan_path_to(self, *b);
+        if (!plan_) return ActionStatus::Done;
+    }
+    if (game.step_along(self, *plan_) != StepResult::Moving) {
+        plan_.reset();
+        if (++stuck_ > 6) return ActionStatus::Done;
     }
     return ActionStatus::Running;
 }

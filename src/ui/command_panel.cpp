@@ -25,6 +25,7 @@ constexpr float kBtnH = 42.f;
 constexpr float kGap = 6.f;
 constexpr float kPad = 10.f;
 constexpr std::size_t kStopSlot = 14;  // B
+constexpr std::size_t kFirstSkillSlot = 10;  // Z: las habilidades van en la última fila
 
 const char* resource_word(std::size_t r) {
     static const char* names[] = {"comida", "madera", "oro", "piedra"};
@@ -60,16 +61,21 @@ void CommandPanel::rebuild(const sim::GameState& game, data::PlayerId local, std
 
     std::vector<data::TypeId> builds;
     bool any_unit = false;
-    const sim::SpawnableEntity* producer = nullptr;  // edificio que entrena o investiga
+    const sim::SpawnableEntity* producer = nullptr;      // edificio que entrena o investiga
+    const sim::SpawnableEntity* skill_owner = nullptr;   // primera unidad con habilidades
+    const sim::SpawnableEntity* sheltering = nullptr;    // edificio con gente dentro
     for (core::EntityHandle h : selection) {
         const sim::SpawnableEntity* e = game.entity(h);
         if (!e || e->current_player != local) continue;
         const auto& s = game.sheet_of(*e);
+        if (!sheltering && !e->garrison.empty()) sheltering = e;
         if (s.is_unit()) {
             any_unit = true;
-            for (auto t : game.buildable_by(local, s)) {
+            // Lo que puede construir sale de sus capabilities de AHORA (una tecnología puede añadir torres)
+            for (auto t : game.buildable_by(local, *e)) {
                 if (std::find(builds.begin(), builds.end(), t) == builds.end()) builds.push_back(t);
             }
+            if (!skill_owner && !game.skills_of(*e).empty()) skill_owner = e;
         } else if (!producer && s.is_building() && e->is_complete() &&
                    (!game.trainable_at(local, e->type).empty() || !game.techs_at(local, e->type).empty())) {
             producer = e;
@@ -100,7 +106,26 @@ void CommandPanel::rebuild(const sim::GameState& game, data::PlayerId local, std
             if (!age_ok) b.tooltip += "\nRequiere " + age_name(s.stats.min_age);
             else if (!b.enabled) b.tooltip += "\nFaltan recursos";
             add(slot++, std::move(b));
-            if (slot == kStopSlot) break;
+            if (slot == kFirstSkillSlot) break;
+        }
+        // Habilidades activas en la última fila (Z X C V)
+        if (skill_owner) {
+            const auto& skills = game.skills_of(*skill_owner);
+            for (std::size_t i = 0; i < skills.size() && kFirstSkillSlot + i < kStopSlot; ++i) {
+                const data::SkillTemplate* sk = data.find_skill(skills[i]);
+                if (!sk) continue;
+                const uint32_t cd = game.skill_cooldown(*skill_owner, sk->id);
+                Button b;
+                b.kind = ButtonKind::UseSkill;
+                b.skill = static_cast<int>(i);
+                b.is_tech = true;
+                b.label = sk->name;
+                b.enabled = cd == 0;
+                if (cd > 0) b.progress = 1.f - static_cast<float>(cd) / static_cast<float>(std::max<uint32_t>(1, sk->cooldown_ticks));
+                b.tooltip = sk->name + "\n" + sk->description + "\nEnfriamiento: " + seconds_text(sk->cooldown_ticks);
+                if (cd > 0) b.tooltip += "\nLista en " + seconds_text(cd);
+                add(kFirstSkillSlot + i, std::move(b));
+            }
         }
         Button stop;
         stop.kind = ButtonKind::Stop;
@@ -171,6 +196,15 @@ void CommandPanel::rebuild(const sim::GameState& game, data::PlayerId local, std
             buttons_.push_back(std::move(q));
             has_queue_ = true;
         }
+    }
+
+    // Edificio con guarnición: botón para sacar a todos
+    if (!any_unit && sheltering) {
+        Button out;
+        out.kind = ButtonKind::Ungarrison;
+        out.label = "Desalojar (" + std::to_string(sheltering->garrison.size()) + ")";
+        out.tooltip = "Desalojar\nSaca a todas las unidades guarecidas";
+        add(kStopSlot, std::move(out));
     }
 
     visible_ = !buttons_.empty();

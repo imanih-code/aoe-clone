@@ -4,6 +4,8 @@
 #include <cstdint>
 #include <deque>
 #include <limits>
+#include <map>
+#include <string>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -11,6 +13,7 @@
 #include "core/entity_handle.hpp"
 #include "core/fixed.hpp"
 #include "data/ids.hpp"
+#include "data/obj_sheet.hpp"
 #include "sim/actions/action.hpp"
 #include "sim/commands/command.hpp"
 
@@ -61,6 +64,25 @@ struct Order {
     data::TypeId type_arg;
 };
 
+// Lo que la entidad puede hacer AHORA: ficha + modificadores del jugador original + los suyos propios.
+// Se recalcula cuando cambia algo de eso (mutability.md, rebuild_capabilities).
+struct CapabilityCache {
+    bool valid = false;
+    uint32_t epoch = 0;             // modifier_epoch del jugador original al calcularla
+    uint32_t instance_version = 0;  // versión de los modificadores de la propia entidad
+    data::TypeId type;
+    data::CapabilitySet caps;
+    std::vector<std::pair<data::Capability, data::ActionConfig>> configs;
+    std::vector<std::string> triggers;
+    std::vector<std::string> skills;
+};
+
+struct SkillState {
+    std::string id;
+    uint32_t cooldown = 0;  // ticks hasta poder volver a usarla
+    uint32_t active = 0;    // ticks que le quedan de efecto (auras)
+};
+
 struct SpawnableEntity {
     core::EntityHandle self;
     data::TypeId type;
@@ -86,6 +108,21 @@ struct SpawnableEntity {
     // ─── Acción en curso ─────────────────────────────────────────────────
     std::unique_ptr<IAction> action;
     std::deque<Order> orders;  // cola de órdenes (Shift), en orden de llegada
+
+    // ─── Mutabilidad ─────────────────────────────────────────────────────
+    mutable CapabilityCache caps;
+    std::vector<data::Modifier> instance_mods;  // efectos sobre esta entidad (habilidades, triggers)
+    std::vector<uint32_t> instance_mod_until;   // tick en que caduca cada uno (0 = permanente)
+    uint32_t instance_version = 0;
+    mutable std::optional<data::EntityStats> instance_stats;  // stats con instance_mods (caché)
+    mutable uint32_t instance_stats_epoch = 0;
+    mutable uint32_t instance_stats_version = 0;
+    std::map<std::string, uint32_t> trigger_uses;
+    std::vector<SkillState> skill_states;
+
+    // ─── Guarnición ──────────────────────────────────────────────────────
+    core::EntityHandle garrisoned_in;           // dentro de qué edificio está (oculta)
+    std::vector<core::EntityHandle> garrison;   // edificio: quién hay dentro
 
     bool is_converted() const { return original_player != current_player; }
     bool is_complete() const { return !construction.has_value(); }

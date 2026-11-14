@@ -9,5 +9,6 @@
   "armor": { "melee": 2, "pierce": 2, "infantry": 0 },
   "cost": { "food": 65, "gold": 30 },
   "age": 1,
+  "skills": ["battle_cry"],
   "visual": { "size": 0.27, "label": "Guardia" }
 }

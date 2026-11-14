@@ -1,0 +1,6 @@
+{
+  // Caso 5 (solo datos): cada muerte que causa da 5 de oro a su dueño
+  "id": "plunder",
+  "event": "on_kill",
+  "resources": [ { "type": "gold", "amount": 5 } ]
+}

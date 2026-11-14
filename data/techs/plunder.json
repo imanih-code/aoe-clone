@@ -1,0 +1,13 @@
+{
+  // Caso 5 (solo datos, sin tocar el motor): la infantería gana oro por cada muerte que causa
+  "key": "plunder",
+  "name": "Botín",
+  "description": "La infantería consigue 5 de oro por cada enemigo que mata.",
+  "researched_at": "barracks",
+  "cost": { "food": 100, "gold": 100 },
+  "time": 35,
+  "age": 1,
+  "modifiers": [
+    { "id": "plunder", "classes": ["infantry"], "object_mods": [ { "grant_trigger": "plunder" } ] }
+  ]
+}

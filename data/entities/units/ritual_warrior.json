@@ -1,0 +1,19 @@
+{
+  // Caso 3 de mutability.md: con su habilidad se sacrifica y en su lugar aparece una torre.
+  "key": "ritual_warrior",
+  "extends": "_military_base",
+  "name": "Guerrero ritual",
+  "description": "Infantería que puede sacrificarse para alzar una Torre del ritual donde está.",
+  "classes": ["unit", "military", "infantry"],
+  "capabilities": ["move", "attack", "garrison", "morph"],
+  "action_configs": { "morph": { "into": "ritual_tower", "consume": true, "keep_hp_percent": false } },
+  "skills": ["ritual_sacrifice"],
+  "hp": 55,
+  "speed": 0.9,
+  "attack": { "melee": 7, "building": 2 },
+  "armor": { "melee": 1, "pierce": 1, "infantry": 0 },
+  "cost": { "food": 80, "gold": 50 },
+  "train_time": 30,
+  "age": 2,
+  "visual": { "size": 0.25, "label": "Guerrero ritual" }
+}

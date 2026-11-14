@@ -1,0 +1,20 @@
+{
+  // No la construye nadie: aparece cuando un Guerrero ritual se sacrifica.
+  "key": "ritual_tower",
+  "extends": "_building_base",
+  "name": "Torre del ritual",
+  "description": "Torre que surge del sacrificio de un Guerrero ritual.",
+  "classes": ["building", "tower"],
+  "capabilities": ["attack"],
+  "hp": 600,
+  "footprint": [1, 1],
+  "sight": 8,
+  "attack": { "pierce": 6, "building": 0 },
+  "range": 7,
+  "reload": 2.0,
+  "projectile": "arrow",
+  "aggressive": true,
+  "armor": { "melee": 1, "pierce": 6, "building": 0 },
+  "action_configs": { "garrison": { "classes": ["infantry", "archer"], "capacity": 3 } },
+  "visual": { "height": 2.0, "color": "#7a3b8c", "player_color": false, "label": "Torre del ritual" }
+}

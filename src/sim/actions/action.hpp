@@ -25,7 +25,7 @@ struct MovePlan {
 
 enum class StepResult { Moving, Arrived, Blocked };
 enum class ActionStatus { Running, Done };
-enum class ActionKind { Move, Gather, Build, Attack, AttackMove };
+enum class ActionKind { Move, Gather, Build, Attack, AttackMove, Convert, Heal, Garrison };
 
 // Acción ordenada por el jugador (IActionBehavior en mutability.md).
 // Reglas: guarda EntityHandle (nunca punteros) y nunca reasigna self.action.
@@ -124,6 +124,53 @@ private:
     std::optional<MovePlan> plan_;
     std::optional<AttackAction> engaged_;
     int replans_ = 0;
+};
+
+// Convertir: acercarse a tiro y "predicar" un tiempo (aleatorio y determinista); si sale bien,
+// el objetivo cambia de dueño pero conserva sus stats (original_player, architecture.md §3).
+class ConvertAction final : public IAction {
+public:
+    explicit ConvertAction(core::EntityHandle target) : target_(target) {}
+    ActionKind kind() const override { return ActionKind::Convert; }
+    ActionStatus tick(SpawnableEntity& self, GameState& game) override;
+    const char* label() const override { return "Convirtiendo"; }
+    core::EntityHandle target() const { return target_; }
+    float progress() const { return needed_ == 0 ? 0.f : static_cast<float>(done_) / static_cast<float>(needed_); }
+
+private:
+    core::EntityHandle target_;
+    std::optional<MovePlan> plan_;
+    int repath_ = 0;
+    uint32_t needed_ = 0;
+    uint32_t done_ = 0;
+};
+
+class HealAction final : public IAction {
+public:
+    explicit HealAction(core::EntityHandle target) : target_(target) {}
+    ActionKind kind() const override { return ActionKind::Heal; }
+    ActionStatus tick(SpawnableEntity& self, GameState& game) override;
+    const char* label() const override { return "Curando"; }
+
+private:
+    core::EntityHandle target_;
+    std::optional<MovePlan> plan_;
+    int repath_ = 0;
+    core::Fixed pending_;  // curación acumulada (fracciones de punto de vida)
+};
+
+// Entrar en un edificio: al llegar, la unidad desaparece dentro (GameState::garrison).
+class GarrisonAction final : public IAction {
+public:
+    explicit GarrisonAction(core::EntityHandle building) : building_(building) {}
+    ActionKind kind() const override { return ActionKind::Garrison; }
+    ActionStatus tick(SpawnableEntity& self, GameState& game) override;
+    const char* label() const override { return "Entrando al edificio"; }
+
+private:
+    core::EntityHandle building_;
+    std::optional<MovePlan> plan_;
+    int stuck_ = 0;
 };
 
 class BuildAction final : public IAction {

@@ -1,0 +1,5 @@
+{
+  "id": "death_knight_rise",
+  "event": "on_death",
+  "spawn": [ { "type": "man_at_arms", "hp_fraction": 0.5, "inherit_original": true, "inherit_current": true } ]
+}

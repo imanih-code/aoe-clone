@@ -25,7 +25,8 @@ licensed). See [architecture.md §11.7](architecture.md).
 | Phase 4 — combat, techs, civs | Done: armor-class damage, melee and ranged combat with arrows as entities, auto-attack and retaliation, towers, modifier resolver with per-player effective stats, 3 ages, techs, upgrade lines, 3 original civilizations with bonuses and unique units |
 | Phase 5 — fog, AI, victory, replays | Mostly done: per-player fog of war respected by the simulation, smooth fog and clickable minimap, scripted AI (economy, farms, buildings, age-up, attack waves, defense), conquest victory with end screen, replays verified by state hash, speed x1–x8, pause, spectator mode. Pending: a full game played to victory has not been verified yet |
 | Phase 5b — living world | Done: walkable 3x3 farms worked tile by tile, gather slots per resource, wildlife (livestock, fleeing prey, hostile wolves, retaliating boars, carcasses), shore and deep-water fish with dock and fishing boat, fog-aware pathfinding that replans on discovery, Shift order queues and villagers that start working what they just built |
-| Phase 6+ | Dynamic capabilities, conversion, garrison, morph and triggers next — see [`ROADMAP.md`](ROADMAP.md) |
+| Phase 6 — mutability | Done: runtime capabilities and action configs changed by techs and per-unit modifiers, monk conversion and healing, garrison in town center and towers (extra arrows), triggers on death/kill/hit/spawn, skills (morph, aura, stat boost) with cooldowns. The four cases of `mutability.md` plus a fifth added with data only are integration tests |
+| Phase 7 | Optional: save/load, lockstep multiplayer, map editor — see [`ROADMAP.md`](ROADMAP.md) |
 | `src/*.py`, `main.py`, `requirements.txt` | Legacy Python/pygame prototype, superseded by the C++ code; to be removed |
 
 Graphics are **labeled placeholder shapes** for now. Each entity's look comes from the `visual` block of its JSON, so swapping in sprites later (original or CC0-licensed) does not touch game code.
@@ -98,6 +99,7 @@ ctest --preset windows-release
 | `--civ KEY` | Your civilization: `valdoria`, `tarvesh` or `ostreva` |
 | `--demo` | Plays a few economy orders at start (gather, build, train) |
 | `--battle` | Spawns two armies and a tower next to your base to watch combat |
+| `--showcase` | Phase 6 demo: monks converting, a ritual warrior using its skill, a death knight and villagers garrisoning the town center |
 | `--spectate` | Every player is AI and the whole map is visible |
 | `--reveal` | No fog of war |
 | `--no-ai` | Opponents stay idle (for testing) |
@@ -112,6 +114,9 @@ ctest --preset windows-release
 - Right click with units: move (formation) · on a resource: gather · on an animal: hunt (villagers) or attack (troops) · on your construction site: help build · on an enemy: attack
 - `Shift` + any order: add it to each unit's queue; the queued route is drawn with yellow dots. `Shift` while placing buildings: several foundations, built one after another
 - `Ctrl` + right click: attack-move (walk there fighting anything on the way)
+- Monks: right click an enemy to convert it, a wounded ally to heal it
+- `Alt` + right click on your town center or tower: garrison (troops garrison with a plain right click); the building's **Ungarrison** button lets them out
+- Unit skills (sacrifice, prayer, battle cry) show up on the `Z X C V` row of the command panel with their cooldown
 - Minimap (bottom right): click or drag to move the camera
 - Right click with a building selected: set its rally point
 - Command panel (bottom center): built from the selection's data — what a villager can build, what a building trains, the production queue (click to cancel and refund). Hotkeys follow the grid: `Q W E R T` / `A S D F G` / `Z X C V B`

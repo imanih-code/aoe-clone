@@ -15,7 +15,7 @@
 
 namespace ui {
 
-enum class ButtonKind { Build, Train, Research, Stop, CancelQueue };
+enum class ButtonKind { Build, Train, Research, Stop, CancelQueue, UseSkill, Ungarrison };
 
 struct Button {
     ButtonKind kind = ButtonKind::Stop;
@@ -23,6 +23,7 @@ struct Button {
     int index = 0;  // posición en la cuadrícula; CancelQueue: posición en la cola
     data::TechId tech = 0;  // Research
     bool is_tech = false;   // color distinto para tecnologías
+    int skill = 0;          // UseSkill: posición de la habilidad en la unidad
     sf::FloatRect rect;
     sf::Keyboard::Key hotkey = sf::Keyboard::Key::Unknown;
     char hotkey_char = 0;

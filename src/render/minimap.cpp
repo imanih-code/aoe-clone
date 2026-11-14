@@ -87,7 +87,7 @@ void Minimap::draw(sf::RenderWindow& window, const sim::GameState& game, std::op
     };
     game.entities().for_each([&](core::EntityHandle, const sim::SpawnableEntity& e) {
         const auto& s = game.sheet_of(e);
-        if (s.is_projectile() || s.visual.shape == data::ShapeKind::Tree) return;
+        if (s.is_projectile() || s.visual.shape == data::ShapeKind::Tree || e.garrisoned_in) return;
         if (viewer && !(s.is_unit() ? game.is_visible_to(*viewer, e) : game.is_known_to(*viewer, e))) return;
         sf::Color c = e.current_player == data::kGaia ? rgba(s.visual.color) : rgba(game.player(e.current_player).color);
         if (e.current_player != data::kGaia) c = mix(c, sf::Color::White, 0.15f);

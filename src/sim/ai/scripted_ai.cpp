@@ -78,14 +78,13 @@ std::vector<Command> ScriptedAI::think(const GameState& game) {
     for (core::EntityHandle h : ps.units) {
         const SpawnableEntity* u = game.entity(h);
         if (!u || u->hp <= 0) continue;
-        const auto& s = game.sheet_of(*u);
-        if (s.stats.has(data::Capability::Gather)) {
+        if (game.has_cap(*u, data::Capability::Gather)) {
             v.villagers.push_back(h);
             if (!u->action) v.idle_villagers.push_back(h);
             else if (u->action->kind() == ActionKind::Gather) {
                 ++v.gatherers[data::index_of(static_cast<const GatherAction&>(*u->action).resource())];
             }
-        } else if (s.can_attack() && s.can_move()) {
+        } else if (game.can_attack(*u) && game.can_move(*u)) {
             v.military.push_back(h);
             if (!u->action) v.idle_military.push_back(h);
         }

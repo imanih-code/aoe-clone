@@ -161,6 +161,7 @@ int GameApp::run() {
 
         if (options_.demo && frame == 5) start_demo();
         if (options_.battle && frame == 5) start_battle();
+        if (options_.showcase && frame == 5) start_showcase();
 
         draw_frame(accumulator / kStep, fps);
         ++frame;
@@ -189,7 +190,7 @@ void GameApp::start_demo() {
     std::vector<core::EntityHandle> villagers, others;
     for (auto h : me.units) {
         const auto* e = game_->entity(h);
-        (game_->sheet_of(*e).stats.has(data::Capability::Gather) ? villagers : others).push_back(h);
+        (game_->has_cap(*e, data::Capability::Gather) ? villagers : others).push_back(h);
     }
     auto command = [&](sim::CommandType type, std::vector<core::EntityHandle> actors) {
         sim::Command c;
@@ -270,6 +271,51 @@ void GameApp::start_battle() {
     }
     input_.select(mine);
     camera_.center_on_world({static_cast<float>(c.x), static_cast<float>(c.y)});
+}
+
+// Modo escaparate (Fase 6): mutabilidad en acción junto a la base del jugador 1
+void GameApp::start_showcase() {
+    const core::Vec2F s = game_->start_position(1);
+    const core::TilePos c{s.x.floor_int() + 8, s.y.floor_int() + 3};
+    auto spawn = [&](const char* key, data::PlayerId p, int dx, int dy) { return game_->debug_spawn(data_.type(key), p, {c.x + dx, c.y + dy}); };
+    auto command = [&](sim::CommandType type, std::vector<core::EntityHandle> actors) {
+        sim::Command cmd;
+        cmd.issuer = 1;
+        cmd.type = type;
+        cmd.actors = std::move(actors);
+        return cmd;
+    };
+    // Monjes convirtiendo milicianos enemigos (haz dorado)
+    const auto m1 = spawn("monk", 1, -3, -1);
+    const auto m2 = spawn("monk", 1, -3, 1);
+    const auto e1 = spawn("militia", 2, 2, -1);
+    const auto e2 = spawn("militia", 2, 2, 1);
+    auto conv1 = command(sim::CommandType::Convert, {m1});
+    conv1.target = e1;
+    auto conv2 = command(sim::CommandType::Convert, {m2});
+    conv2.target = e2;
+    input_.submit(conv1);
+    input_.submit(conv2);
+    // Guerrero ritual que se sacrifica: aparece la Torre del ritual
+    const auto rw = spawn("ritual_warrior", 1, -1, 4);
+    auto sacrifice = command(sim::CommandType::UseSkill, {rw});
+    sacrifice.index = 0;
+    input_.submit(sacrifice);
+    // Caballero de la muerte contra hombres de armas (al caer, su jinete sigue a pie)
+    spawn("death_knight", 1, 0, -5);
+    for (int i = 0; i < 4; ++i) spawn("man_at_arms", 2, 3, -6 + i);
+    // Aldeanos a la plaza mayor (guarnición)
+    std::vector<core::EntityHandle> villagers;
+    for (auto h : game_->player(1).units) {
+        if (const auto* e = game_->entity(h); e && game_->has_cap(*e, data::Capability::Gather)) villagers.push_back(h);
+    }
+    if (!villagers.empty() && !game_->player(1).buildings.empty()) {
+        auto in = command(sim::CommandType::Garrison, villagers);
+        in.target = game_->player(1).buildings.front();
+        input_.submit(in);
+    }
+    input_.select({m1, m2});
+    camera_.center_on_world({static_cast<float>(c.x) - 2.f, static_cast<float>(c.y)});
 }
 
 void GameApp::draw_frame(float alpha, float fps) {

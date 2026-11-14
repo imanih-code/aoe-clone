@@ -4,7 +4,7 @@
   "name": "Aldeano",
   "description": "Recolecta recursos y construye edificios.",
   "classes": ["unit", "villager", "civilian"],
-  "capabilities": ["move", "gather", "build", "attack"],
+  "capabilities": ["move", "gather", "build", "attack", "garrison"],
   "hp": 25,
   "speed": 0.8,
   "attack": { "melee": 3, "building": 1 },
@@ -12,6 +12,6 @@
   "train_time": 25,
   // recursos por segundo; "carry" = cuánto lleva antes de ir a depositar
   "gather": { "carry": 10, "rates": { "food": 0.33, "wood": 0.39, "gold": 0.38, "stone": 0.36 } },
-  "builds": ["house", "farm", "dock", "lumber_camp", "mining_camp", "mill", "barracks", "archery_range", "stable", "forge", "watch_tower"],
+  "builds": ["house", "farm", "dock", "lumber_camp", "mining_camp", "mill", "barracks", "archery_range", "stable", "forge", "watch_tower", "monastery"],
   "visual": { "label": "Aldeano" }
 }

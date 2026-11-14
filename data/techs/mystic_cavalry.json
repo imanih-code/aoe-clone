@@ -1,0 +1,14 @@
+{
+  // Caso 2 de mutability.md: los caballeros convierten infantería enemiga (más despacio que un monje)
+  "key": "mystic_cavalry",
+  "name": "Caballería mística",
+  "description": "Los caballeros pueden convertir infantería enemiga cuerpo a cuerpo.",
+  "researched_at": "monastery",
+  "cost": { "gold": 300 },
+  "time": 60,
+  "age": 2,
+  "modifiers": [
+    { "id": "mystic_cavalry", "type": "knight",
+      "object_mods": [ { "grant": "convert", "config": { "classes": ["infantry"], "buildings": false, "time_mult": 1.5, "range": 1 } } ] }
+  ]
+}
