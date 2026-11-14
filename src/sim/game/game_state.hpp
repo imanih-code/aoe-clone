@@ -94,7 +94,18 @@ public:
     bool in_attack_range(const SpawnableEntity& attacker, const SpawnableEntity& target) const;
     core::EntityHandle find_enemy_near(const SpawnableEntity& e, int radius_tiles) const;
 
+    // ─── Niebla de guerra ────────────────────────────────────────────────
+    const VisibilityMap& visibility(data::PlayerId p) const { return players_.at(p).visibility; }
+    // Unidades: el tile donde están es visible. Edificios y recursos: basta con haberlo explorado.
+    bool is_visible_to(data::PlayerId p, const SpawnableEntity& e) const;
+    bool is_known_to(data::PlayerId p, const SpawnableEntity& e) const;
+
+    // ─── Fin de partida ──────────────────────────────────────────────────
+    bool is_game_over() const { return game_over_; }
+    std::optional<data::PlayerId> winner() const { return winner_; }
+
     // ─── Para tests y futuras herramientas (editor, escenarios) ──────────
+    void debug_destroy_player(data::PlayerId p);
     core::EntityHandle debug_spawn(data::TypeId type, data::PlayerId owner, core::TilePos tile);
     void debug_complete_research(data::PlayerId p, data::TechId t) { complete_research(p, t); }
     void debug_set_resources(data::PlayerId p, const data::ResourceArray& r) { players_.at(p).resources = r; }
@@ -111,7 +122,8 @@ public:
     StepResult step_along(SpawnableEntity& e, MovePlan& plan);
     bool in_reach(const SpawnableEntity& e, const SpawnableEntity& target) const;
     core::EntityHandle nearest_dropoff(data::PlayerId p, data::ResourceTag r, core::Vec2F from) const;
-    core::EntityHandle nearest_resource(data::ResourceTag r, core::Vec2F from, int max_tiles) const;
+    // Recursos de Gaia y, si for_player no es Gaia, también sus propias granjas terminadas
+    core::EntityHandle nearest_resource(data::ResourceTag r, core::Vec2F from, int max_tiles, data::PlayerId for_player = data::kGaia) const;
     // Devuelve true si la obra queda terminada con esta aportación.
     bool contribute_build(SpawnableEntity& site);
     void request_despawn(core::EntityHandle h) { pending_despawns_.push_back(h); }
@@ -138,13 +150,15 @@ private:
 
     // ─── Comandos y sistemas ─────────────────────────────────────────────
     void apply_command(const Command& cmd);
-    void command_move(const std::vector<core::EntityHandle>& actors, core::Vec2F target);
+    void command_move(const std::vector<core::EntityHandle>& actors, core::Vec2F target, bool attack_move = false);
     void command_place_building(const Command& cmd, const std::vector<core::EntityHandle>& actors);
     void production_system();
     void action_system();
     void projectile_system();
     void resolve_damage();
     void auto_attack_system();
+    void visibility_system(bool force);
+    void victory_system();
 
     // ─── Tecnologías y civilizaciones ────────────────────────────────────
     void complete_research(data::PlayerId p, data::TechId t);
@@ -166,6 +180,8 @@ private:
     std::vector<SpawnRequest> pending_spawns_;
     std::vector<core::EntityHandle> pending_despawns_;
     std::vector<DamageEvent> damage_;
+    bool game_over_ = false;
+    std::optional<data::PlayerId> winner_;
     std::vector<core::EntityHandle> query_;  // buffer reutilizable
 };
 

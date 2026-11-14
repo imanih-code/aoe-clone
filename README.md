@@ -23,7 +23,8 @@ licensed). See [architecture.md §11.7](architecture.md).
 | Phase 2 — entities and movement | Mostly done: data-driven entities, labeled placeholder shapes, selection (click, box, shift, double click), right-click move with A* and formation. Pending: perf target of 200 units |
 | Phase 3 — economy | Done: data inheritance (`extends`), per-sheet capabilities, gather/deposit cycle, construction sites with several builders, houses and population, training queues with cancel and rally points, command panel with grid hotkeys, contextual right click |
 | Phase 4 — combat, techs, civs | Done: armor-class damage, melee and ranged combat with arrows as entities, auto-attack and retaliation, towers, modifier resolver with per-player effective stats, 3 ages, techs, upgrade lines, 3 original civilizations with bonuses and unique units |
-| Phase 5+ | Fog of war, AI, victory and replays next — see [`ROADMAP.md`](ROADMAP.md) |
+| Phase 5 — fog, AI, victory, replays | Mostly done: per-player fog of war respected by the simulation, smooth fog and clickable minimap, scripted AI (economy, farms, buildings, age-up, attack waves, defense), conquest victory with end screen, replays verified by state hash, speed x1–x8, pause, spectator mode. Pending: a full game played to victory has not been verified yet |
+| Phase 6+ | Dynamic capabilities, conversion, garrison, morph and triggers next — see [`ROADMAP.md`](ROADMAP.md) |
 | `src/*.py`, `main.py`, `requirements.txt` | Legacy Python/pygame prototype, superseded by the C++ code; to be removed |
 
 Graphics are **labeled placeholder shapes** for now. Each entity's look comes from the `visual` block of its JSON, so swapping in sprites later (original or CC0-licensed) does not touch game code.
@@ -96,18 +97,29 @@ ctest --preset windows-release
 | `--civ KEY` | Your civilization: `valdoria`, `tarvesh` or `ostreva` |
 | `--demo` | Plays a few economy orders at start (gather, build, train) |
 | `--battle` | Spawns two armies and a tower next to your base to watch combat |
+| `--spectate` | Every player is AI and the whole map is visible |
+| `--reveal` | No fog of war |
+| `--no-ai` | Opponents stay idle (for testing) |
+| `--speed N` | Start at x1, x2, x4 or x8 |
+| `--replay file.json` | Play back a recorded game and check it stays in sync |
+| `--record file.json` | Where to save the replay (default `replays/last_replay.json`) |
 | `--screenshot file.png [--frame N]` | Saves a capture at frame N (default 90) and exits |
 
 ## Controls
 
 - Left click: select · drag: box select your units · `Shift`: add/remove · double click: all of that type on screen
 - Right click with units: move (formation) · on a resource: gather · on your construction site: help build · on an enemy: attack
+- `Ctrl` + right click: attack-move (walk there fighting anything on the way)
+- Minimap (bottom right): click or drag to move the camera
 - Right click with a building selected: set its rally point
 - Command panel (bottom center): built from the selection's data — what a villager can build, what a building trains, the production queue (click to cancel and refund). Hotkeys follow the grid: `Q W E R T` / `A S D F G` / `Z X C V B`
 - Placing a building: left click to place (`Shift` to place several) · right click or `Esc` to cancel
 - `.`: next idle villager · `Space`: center on selection
 - Arrow keys, screen edges or middle-drag: pan · mouse wheel: zoom
 - `L`: label mode (smart / all / none) · `F2`: grid · `H` or `F1`: help · `Esc`: clear selection
+- `+` / `-`: game speed · `P`: pause · `Esc` or `Enter` on the end screen: quit
+
+Every game is recorded to `replays/last_replay.json` when it ends or the window closes.
 
 ## Adding content
 

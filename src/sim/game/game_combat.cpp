@@ -206,7 +206,7 @@ core::EntityHandle GameState::find_enemy_near(const SpawnableEntity& e, int radi
     const int64_t max_d = static_cast<int64_t>(r.raw) * r.raw;
     for (core::EntityHandle h : found) {
         const SpawnableEntity* o = entities_.get(h);
-        if (!o || !is_enemy(e, *o)) continue;
+        if (!o || !is_enemy(e, *o) || !is_visible_to(e.current_player, *o)) continue;
         const auto& os = sheet_of(*o);
         if (!os.is_unit() && !os.is_building()) continue;
         const int64_t d = dist_sq_raw(o->position, e.position);
@@ -304,10 +304,82 @@ void GameState::auto_attack_system() {
     });
 }
 
+// ─── Niebla de guerra ────────────────────────────────────────────────────────
+
+bool GameState::is_visible_to(data::PlayerId p, const SpawnableEntity& e) const {
+    if (e.current_player == p) return true;
+    const VisibilityMap& fog = players_.at(p).visibility;
+    const auto& s = sheet_of(e);
+    if (s.is_unit() || s.is_projectile()) return fog.visible(core::tile_of(e.position));
+    // Edificios y recursos: cualquier esquina del footprint
+    return fog.visible(e.anchor) || fog.visible({e.anchor.x + s.stats.footprint_w - 1, e.anchor.y + s.stats.footprint_h - 1});
+}
+
+bool GameState::is_known_to(data::PlayerId p, const SpawnableEntity& e) const {
+    if (e.current_player == p) return true;
+    const auto& s = sheet_of(e);
+    if (s.is_unit() || s.is_projectile()) return is_visible_to(p, e);
+    const VisibilityMap& fog = players_.at(p).visibility;
+    return fog.explored(e.anchor) || fog.explored({e.anchor.x + s.stats.footprint_w - 1, e.anchor.y + s.stats.footprint_h - 1});
+}
+
+void GameState::visibility_system(bool force) {
+    if (!force && tick_ % 4 != 0) return;
+    for (int p = 1; p <= config_.num_players; ++p) {
+        PlayerState& ps = players_[static_cast<std::size_t>(p)];
+        ps.visibility.begin_update();
+        auto reveal = [&](core::EntityHandle h) {
+            const SpawnableEntity* e = entities_.get(h);
+            if (!e) return;
+            const auto& s = sheet_of(*e);
+            const int extra = s.is_building() ? std::max(s.stats.footprint_w, s.stats.footprint_h) / 2 : 0;
+            ps.visibility.reveal_circle(core::tile_of(e->position), stats_of(*e).sight + extra);
+        };
+        for (core::EntityHandle h : ps.units) reveal(h);
+        for (core::EntityHandle h : ps.buildings) reveal(h);
+        ps.visibility.end_update();
+    }
+}
+
+// ─── Victoria por conquista ──────────────────────────────────────────────────
+
+void GameState::victory_system() {
+    if (game_over_ || tick_ % 10 != 0) return;
+    int alive = 0;
+    std::optional<data::PlayerId> last;
+    for (int p = 1; p <= config_.num_players; ++p) {
+        PlayerState& ps = players_[static_cast<std::size_t>(p)];
+        if (!ps.is_defeated) {
+            // Derrotado = sin unidades ni edificios (las bajas pendientes de este tick ya cuentan)
+            const auto alive_entity = [&](core::EntityHandle h) {
+                const SpawnableEntity* e = entities_.get(h);
+                return e && e->hp > 0 && std::find(pending_despawns_.begin(), pending_despawns_.end(), h) == pending_despawns_.end();
+            };
+            const bool any = std::any_of(ps.units.begin(), ps.units.end(), alive_entity) ||
+                             std::any_of(ps.buildings.begin(), ps.buildings.end(), alive_entity);
+            if (!any) ps.is_defeated = true;  // el PlayerState sigue existiendo (architecture.md §3.3)
+        }
+        if (!ps.is_defeated) {
+            ++alive;
+            last = ps.id;
+        }
+    }
+    if (config_.num_players > 1 && alive <= 1) {
+        game_over_ = true;
+        winner_ = last;
+    }
+}
+
 // ─── Herramientas ────────────────────────────────────────────────────────────
 
 core::EntityHandle GameState::debug_spawn(data::TypeId type, data::PlayerId owner, core::TilePos tile) {
     return spawn_now({type, owner, tile, false, std::nullopt, std::nullopt});
+}
+
+void GameState::debug_destroy_player(data::PlayerId p) {
+    const PlayerState& ps = players_.at(p);
+    for (core::EntityHandle h : ps.units) request_despawn(h);
+    for (core::EntityHandle h : ps.buildings) request_despawn(h);
 }
 
 }  // namespace sim

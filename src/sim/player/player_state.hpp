@@ -9,6 +9,7 @@
 #include "core/entity_handle.hpp"
 #include "data/ids.hpp"
 #include "data/obj_sheet.hpp"
+#include "sim/world/visibility_map.hpp"
 
 namespace sim {
 
@@ -38,6 +39,9 @@ struct PlayerState {
     // ─── Entidades vivas ─────────────────────────────────────────────────
     std::vector<core::EntityHandle> units;
     std::vector<core::EntityHandle> buildings;
+
+    // ─── Niebla de guerra ────────────────────────────────────────────────
+    VisibilityMap visibility;
 
     // ─── Estadísticas (architecture.md §3.4) ─────────────────────────────
     std::map<data::TypeId, uint32_t> kills_by_type;

@@ -75,7 +75,7 @@ EntityRenderer::EntityRenderer(const sf::Font& font, const data::DataRegistry& d
 }
 
 void EntityRenderer::draw_world(sf::RenderTarget& target, const sim::GameState& game, const Camera& camera, float alpha,
-                                std::span<const core::EntityHandle> selection) {
+                                std::span<const core::EntityHandle> selection, std::optional<data::PlayerId> viewer) {
     visible_.clear();
     query_.clear();
 
@@ -99,6 +99,11 @@ void EntityRenderer::draw_world(sf::RenderTarget& target, const sim::GameState& 
         const sim::SpawnableEntity* e = game.entity(h);
         if (!e) continue;
         const auto& sheet = data_.sheet(e->type);
+        if (viewer) {
+            // Niebla: unidades y flechas solo si se ven ahora; edificios y recursos si se exploraron
+            const bool shown = (sheet.is_unit() || sheet.is_projectile()) ? game.is_visible_to(*viewer, *e) : game.is_known_to(*viewer, *e);
+            if (!shown) continue;
+        }
         const float wx = e->prev_position.x.to_float() + (e->position.x.to_float() - e->prev_position.x.to_float()) * alpha;
         const float wy = e->prev_position.y.to_float() + (e->position.y.to_float() - e->prev_position.y.to_float()) * alpha;
         const sf::Vector2f base = world_to_iso(wx, wy);

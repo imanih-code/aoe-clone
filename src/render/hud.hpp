@@ -2,6 +2,7 @@
 
 #include <optional>
 #include <span>
+#include <string>
 
 #include <SFML/Graphics/Font.hpp>
 #include <SFML/Graphics/RenderWindow.hpp>
@@ -18,6 +19,9 @@ struct HudInfo {
     std::optional<core::TilePos> hovered_tile;
     float fps = 0.f;
     std::optional<sf::FloatRect> drag_rect;  // en píxeles
+    std::string mode;                        // "REPLAY", "ESPECTADOR", "PAUSA"...
+    int speed = 1;
+    float minimap_top = 0.f;                 // el texto de la casilla va encima del minimapa
 };
 
 class Hud {

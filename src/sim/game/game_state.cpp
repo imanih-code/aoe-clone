@@ -26,7 +26,9 @@ GameState::GameState(const data::DataRegistry& data, const GameConfig& config)
     config_.num_players = std::clamp(config_.num_players, 1, static_cast<int>(data_.start().players.size()));
     setup_players();
     generate_map();
+    for (auto& ps : players_) ps.visibility.reset(map_.width(), map_.height());
     apply_pending();
+    visibility_system(true);
 }
 
 // ─── Tick ────────────────────────────────────────────────────────────────────
@@ -39,6 +41,8 @@ void GameState::step(std::span<const Command> commands) {
     projectile_system();   // las flechas en vuelo avanzan e impactan
     resolve_damage();      // se aplica todo el daño a la vez: dos que se matan, mueren los dos
     auto_attack_system();  // unidades ociosas agresivas buscan objetivo
+    visibility_system(false);  // niebla de guerra (cada 4 ticks)
+    victory_system();
     apply_pending();       // altas y bajas al final del tick
     ++tick_;
 }
@@ -87,9 +91,17 @@ void GameState::apply_command(const Command& cmd) {
         break;
     }
 
+    case CommandType::AttackMove: {
+        std::vector<core::EntityHandle> units;
+        std::copy_if(actors.begin(), actors.end(), std::back_inserter(units), movable);
+        command_move(units, cmd.target_pos, true);
+        break;
+    }
+
     case CommandType::Gather: {
         const SpawnableEntity* node = entities_.get(cmd.target);
-        if (!node || !node->resource_node) break;
+        if (!node || !node->resource_node || !is_known_to(cmd.issuer, *node)) break;
+        if (node->current_player != data::kGaia && (node->current_player != cmd.issuer || !node->is_complete())) break;  // granja ajena o en obra
         const data::ResourceTag res = node->resource_node->resource;
         std::vector<core::EntityHandle> others;
         for (auto h : actors) {
@@ -151,7 +163,7 @@ void GameState::apply_command(const Command& cmd) {
 
     case CommandType::Attack: {
         const SpawnableEntity* target = entities_.get(cmd.target);
-        if (!target) break;
+        if (!target || !is_visible_to(cmd.issuer, *target)) break;  // no se ataca lo que no se ve
         std::vector<core::EntityHandle> others;
         for (auto h : actors) {
             SpawnableEntity& e = *entities_.get(h);
@@ -181,7 +193,7 @@ void GameState::apply_command(const Command& cmd) {
     }
 }
 
-void GameState::command_move(const std::vector<core::EntityHandle>& actors, Vec2F target) {
+void GameState::command_move(const std::vector<core::EntityHandle>& actors, Vec2F target, bool attack_move) {
     // Formación en cuadrícula alrededor del destino para que no se apilen.
     const int n = static_cast<int>(actors.size());
     if (n == 0) return;
@@ -195,7 +207,9 @@ void GameState::command_move(const std::vector<core::EntityHandle>& actors, Vec2
         const Fixed ox = spacing * Fixed::ratio(2 * (i % side) - (side - 1), 2);
         const Fixed oy = spacing * Fixed::ratio(2 * (i / side) - (rows - 1), 2);
         const Vec2F t{std::clamp(target.x + ox, Fixed::ratio(1, 2), max_x), std::clamp(target.y + oy, Fixed::ratio(1, 2), max_y)};
-        entities_.get(actors[static_cast<std::size_t>(i)])->action = std::make_unique<MoveAction>(t);
+        auto& action = entities_.get(actors[static_cast<std::size_t>(i)])->action;
+        if (attack_move) action = std::make_unique<AttackMoveAction>(t);
+        else action = std::make_unique<MoveAction>(t);
     }
 }
 
@@ -207,6 +221,9 @@ void GameState::command_place_building(const Command& cmd, const std::vector<cor
         if (sheet_of(*entities_.get(h)).can_build(cmd.type_arg)) builders.push_back(h);
     }
     if (builders.empty() || !can_place(cmd.type_arg, cmd.tile) || !can_afford(cmd.issuer, sheet.stats.cost)) return;
+    // Solo se construye en terreno explorado (las dos esquinas del footprint)
+    const VisibilityMap& fog = players_[cmd.issuer].visibility;
+    if (!fog.explored(cmd.tile) || !fog.explored({cmd.tile.x + sheet.stats.footprint_w - 1, cmd.tile.y + sheet.stats.footprint_h - 1})) return;
 
     auto& res = players_[cmd.issuer].resources;
     for (std::size_t i = 0; i < data::kResourceCount; ++i) res[i] -= sheet.stats.cost[i];
@@ -364,7 +381,7 @@ core::EntityHandle GameState::nearest_dropoff(data::PlayerId p, data::ResourceTa
     return best;
 }
 
-core::EntityHandle GameState::nearest_resource(data::ResourceTag r, Vec2F from, int max_tiles) const {
+core::EntityHandle GameState::nearest_resource(data::ResourceTag r, Vec2F from, int max_tiles, data::PlayerId for_player) const {
     std::vector<core::EntityHandle> found;
     const Fixed m = Fixed::from_int(max_tiles);
     spatial_.query_rect({from.x - m, from.y - m}, {from.x + m, from.y + m}, found);
@@ -373,6 +390,7 @@ core::EntityHandle GameState::nearest_resource(data::ResourceTag r, Vec2F from, 
     for (core::EntityHandle h : found) {
         const SpawnableEntity* n = entities_.get(h);
         if (!n || !n->resource_node || n->resource_node->resource != r || n->resource_node->amount_remaining <= 0) continue;
+        if (n->current_player != data::kGaia && (n->current_player != for_player || !n->is_complete())) continue;  // granjas ajenas o en obra
         const int64_t d = dist_sq_raw(n->position, from);
         if (d > static_cast<int64_t>(m.raw) * m.raw) continue;
         if (!best || d < best_d || (d == best_d && h.index < best.index)) {

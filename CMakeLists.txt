@@ -57,11 +57,14 @@ add_library(sim STATIC
     src/sim/world/tile_map.cpp
     src/sim/world/spatial_grid.cpp
     src/sim/world/pathfinder.cpp
+    src/sim/world/visibility_map.cpp
     src/sim/game/game_state.cpp
     src/sim/game/map_generation.cpp
     src/sim/actions/actions.cpp
     src/sim/game/game_combat.cpp
     src/sim/modifiers/modifier_resolver.cpp
+    src/sim/ai/scripted_ai.cpp
+    src/sim/replay/replay.cpp
 )
 target_include_directories(sim PUBLIC src)
 target_link_libraries(sim PUBLIC nlohmann_json::nlohmann_json PRIVATE aoe_warnings)
@@ -75,6 +78,8 @@ add_executable(aoe_clone
     src/render/entity_renderer.cpp
     src/render/hud.cpp
     src/render/text.cpp
+    src/render/fog_renderer.cpp
+    src/render/minimap.cpp
     src/input/input_controller.cpp
     src/ui/command_panel.cpp
 )
@@ -100,6 +105,7 @@ if(AOE_BUILD_TESTS)
         tests/test_sim.cpp
         tests/test_economy.cpp
         tests/test_combat.cpp
+        tests/test_ai.cpp
     )
     target_include_directories(sim_tests PRIVATE ${doctest_SOURCE_DIR}/doctest)
     target_link_libraries(sim_tests PRIVATE sim aoe_warnings)

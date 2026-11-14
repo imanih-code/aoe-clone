@@ -75,6 +75,8 @@ Principio: **vertical slice primero**. Un aldeano que corta madera de punta a pu
 
 **Hecho cuando**: partida completa contra la IA de principio a fin, y su replay reproduce exactamente el mismo resultado.
 
+> **Estado (2026-11-14)**: casi hecha. Niebla por jugador (visible / explorado) que la simulación respeta: no se ataca lo que no se ve ni se construye sin explorar. Niebla con bordes suaves, minimapa con encuadre clicable, IA por guion (economía, casas, depósitos, granjas, cuartel, subir de edad, oleadas con avance atacando, defensa), victoria por conquista con pantalla de fin, replays con hash cada 100 ticks (`--replay`), velocidad x1–x8, pausa y modo espectador. Se añadió la **granja** (comida renovable): sin ella la comida se agotaba con las bayas. 36 tests. Pendiente: verificar una partida completa hasta la victoria (en 20 minutos de IA contra IA hay combates, 14 bajas, pero ninguna gana), y una IA que se adapte (hoy siempre hace lo mismo).
+
 ## Fase 6 — Mutabilidad
 
 Todo `mutability.md`: `CapabilitySet` dinámico, `ActionConfig` como `std::variant`, `ObjectModifier`, conversión (monjes), garrison, morph, triggers. Los 4 casos de uso como tests de integración.

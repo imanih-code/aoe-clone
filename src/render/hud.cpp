@@ -75,7 +75,8 @@ void Hud::draw(sf::RenderWindow& window, const sim::GameState& game, const HudIn
     const auto& ages = game.data().age_names();
     const std::string age = me.age < ages.size() ? ages[me.age] : std::string("?");
     const std::string right = me.name + (me.civ ? "  ·  " + me.civ->name : std::string()) + "  ·  " + age + "   ·   tick " +
-                              std::to_string(game.tick()) + "  ·  " + std::to_string(static_cast<int>(info.fps)) + " FPS";
+                              std::to_string(game.tick()) + (info.speed > 1 ? "  ·  x" + std::to_string(info.speed) : std::string()) +
+                              "  ·  " + std::to_string(static_cast<int>(info.fps)) + " FPS" + (info.mode.empty() ? std::string() : "  ·  " + info.mode);
     text.setString(utf8(right));
     text.setCharacterSize(14);
     put(right, {size.x - text.getLocalBounds().size.x - 14.f, 6.f}, 14, sf::Color(200, 196, 180));
@@ -90,9 +91,10 @@ void Hud::draw(sf::RenderWindow& window, const sim::GameState& game, const HudIn
             "Panel de órdenes: clic o tecla Q W E R T / A S D F G / Z X C V B",
             "Colocar edificio: clic izq. (Shift = varios)   ·   clic der. o Esc: cancelar",
             "Flechas / bordes / botón central: cámara   ·   Rueda: zoom   ·   Espacio: centrar",
-            "L: etiquetas   ·   F2: cuadrícula   ·   H: ocultar esta ayuda   ·   Esc: deseleccionar",
+            "Ctrl + clic der.: avanzar atacando   ·   Minimapa: clic o arrastrar para mover la cámara",
+            "+ / -: velocidad   ·   P: pausa   ·   L: etiquetas   ·   F2: cuadrícula   ·   H: ocultar ayuda",
         };
-        sf::RectangleShape bg({600.f, 165.f});
+        sf::RectangleShape bg({600.f, 184.f});
         bg.setPosition({10.f, 38.f});
         bg.setFillColor(sf::Color(0, 0, 0, 140));
         window.draw(bg);
@@ -188,7 +190,8 @@ void Hud::draw(sf::RenderWindow& window, const sim::GameState& game, const HudIn
                               terrain_name(game.map().terrain(t.x, t.y)) + (game.map().is_passable(t) ? "" : "  ·  bloqueada");
         text.setCharacterSize(13);
         text.setString(utf8(s));
-        put(s, {size.x - text.getLocalBounds().size.x - 14.f, size.y - 24.f}, 13, sf::Color(220, 220, 220));
+        const float y = info.minimap_top > 0.f ? info.minimap_top - 26.f : size.y - 24.f;
+        put(s, {size.x - text.getLocalBounds().size.x - 14.f, y}, 13, sf::Color(220, 220, 220));
     }
 
     // ─── Caja de selección ───────────────────────────────────────────────

@@ -47,7 +47,7 @@ public:
     EntityRenderer(const sf::Font& font, const data::DataRegistry& data);
 
     void draw_world(sf::RenderTarget& target, const sim::GameState& game, const Camera& camera, float alpha,
-                    std::span<const core::EntityHandle> selection);
+                    std::span<const core::EntityHandle> selection, std::optional<data::PlayerId> viewer = std::nullopt);
     void draw_markers(sf::RenderTarget& target, std::span<const MoveMarker> markers) const;
     // Vista previa del edificio a colocar (verde = se puede, rojo = no)
     void draw_placement(sf::RenderTarget& target, const sim::GameState& game, data::TypeId type, core::TilePos tile,

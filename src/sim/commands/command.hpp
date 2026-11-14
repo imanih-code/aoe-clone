@@ -20,6 +20,7 @@ enum class CommandType : uint8_t {
     SetRally,       // actors (edificios) → target_pos
     Attack,         // actors → target (enemigo)
     Research,       // actors[0] (edificio), index = TechId
+    AttackMove,     // actors → target_pos, atacando lo que encuentren por el camino
 };
 
 // Única forma de cambiar la simulación desde fuera (jugador o IA).

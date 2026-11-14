@@ -46,7 +46,7 @@ ActionStatus GatherAction::tick(SpawnableEntity& self, GameState& game) {
 }
 
 bool GatherAction::retarget(SpawnableEntity& self, GameState& game) {
-    target_ = game.nearest_resource(resource_, has_spot_ ? last_spot_ : self.position, 10);
+    target_ = game.nearest_resource(resource_, has_spot_ ? last_spot_ : self.position, 10, self.current_player);
     plan_.reset();
     return static_cast<bool>(target_);
 }
@@ -203,6 +203,36 @@ ActionStatus AttackAction::tick(SpawnableEntity& self, GameState& game) {
         if (!plan_) return ActionStatus::Done;
     }
     if (game.step_along(self, *plan_) != StepResult::Moving) plan_.reset();
+    return ActionStatus::Running;
+}
+
+// ─── Avanzar atacando ────────────────────────────────────────────────────────
+
+ActionStatus AttackMoveAction::tick(SpawnableEntity& self, GameState& game) {
+    if (engaged_) {
+        if (engaged_->tick(self, game) == ActionStatus::Running) return ActionStatus::Running;
+        engaged_.reset();  // ganó o perdió el rastro: seguir hacia el destino
+        plan_.reset();
+    }
+    // Mirar alrededor cada 8 ticks (escalonado) por si hay enemigos a la vista
+    if ((game.tick() + self.self.index) % 8 == 0 && game.sheet_of(self).can_attack()) {
+        const core::EntityHandle enemy = game.find_enemy_near(self, game.stats_of(self).sight);
+        if (enemy) {
+            engaged_.emplace(enemy, true);
+            return ActionStatus::Running;
+        }
+    }
+    if (!plan_) {
+        plan_ = game.plan_path(self, destination_);
+        if (!plan_) return ActionStatus::Done;
+    }
+    switch (game.step_along(self, *plan_)) {
+    case StepResult::Arrived: return ActionStatus::Done;
+    case StepResult::Blocked:
+        plan_.reset();
+        return ++replans_ > 5 ? ActionStatus::Done : ActionStatus::Running;
+    case StepResult::Moving: break;
+    }
     return ActionStatus::Running;
 }
 

@@ -25,7 +25,7 @@ struct MovePlan {
 
 enum class StepResult { Moving, Arrived, Blocked };
 enum class ActionStatus { Running, Done };
-enum class ActionKind { Move, Gather, Build, Attack };
+enum class ActionKind { Move, Gather, Build, Attack, AttackMove };
 
 // Acción ordenada por el jugador (IActionBehavior en mutability.md).
 // Reglas: guarda EntityHandle (nunca punteros) y nunca reasigna self.action.
@@ -96,12 +96,29 @@ private:
     int repath_ = 0;
 };
 
+// Avanzar atacando: ir hacia un punto y pelear con lo que se encuentre por el camino.
+// Lo usa la IA para sus oleadas y el jugador con Ctrl + clic derecho.
+class AttackMoveAction final : public IAction {
+public:
+    explicit AttackMoveAction(core::Vec2F destination) : destination_(destination) {}
+    ActionKind kind() const override { return ActionKind::AttackMove; }
+    ActionStatus tick(SpawnableEntity& self, GameState& game) override;
+    const char* label() const override { return engaged_ ? "Atacando" : "Avanzando"; }
+
+private:
+    core::Vec2F destination_;
+    std::optional<MovePlan> plan_;
+    std::optional<AttackAction> engaged_;
+    int replans_ = 0;
+};
+
 class BuildAction final : public IAction {
 public:
     explicit BuildAction(core::EntityHandle site) : site_(site) {}
     ActionKind kind() const override { return ActionKind::Build; }
     ActionStatus tick(SpawnableEntity& self, GameState& game) override;
     const char* label() const override { return "Construyendo"; }
+    core::EntityHandle site() const { return site_; }
 
 private:
     core::EntityHandle site_;

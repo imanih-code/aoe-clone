@@ -1,0 +1,16 @@
+{
+  // Fuente de comida renovable: un edificio que también es recurso.
+  // Solo la puede trabajar su dueño; cuando se agota desaparece y hay que construir otra.
+  "key": "farm",
+  "extends": "_building_base",
+  "name": "Granja",
+  "description": "Campo de cultivo: comida para un aldeano. Se agota y hay que replantarla.",
+  "classes": ["building", "resource_node"],
+  "hp": 480,
+  "footprint": [3, 3],
+  "sight": 1,
+  "resource": { "type": "food", "amount": 250 },
+  "cost": { "wood": 60 },
+  "build_time": 15,
+  "visual": { "height": 0.12, "color": "#b59a52", "label": "Granja" }
+}

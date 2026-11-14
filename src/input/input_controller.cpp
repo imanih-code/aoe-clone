@@ -60,7 +60,10 @@ void InputController::update(float dt, const sim::GameState& game, const sf::Ren
         const sf::Vector2f w = render::iso_to_world(window.mapPixelToCoords(sf::Mouse::getPosition(window), camera.view()));
         placement_->tile = {static_cast<int32_t>(std::floor(w.x - s.stats.footprint_w * 0.5f + 0.5f)),
                             static_cast<int32_t>(std::floor(w.y - s.stats.footprint_h * 0.5f + 0.5f))};
-        placement_->valid = game.can_place(placement_->type, placement_->tile) && game.can_afford(local_, s.stats.cost);
+        const auto& fog = game.visibility(local_);
+        placement_->valid = game.can_place(placement_->type, placement_->tile) && game.can_afford(local_, s.stats.cost) &&
+                            fog.explored(placement_->tile) &&
+                            fog.explored({placement_->tile.x + s.stats.footprint_w - 1, placement_->tile.y + s.stats.footprint_h - 1});
     }
 }
 
@@ -244,6 +247,14 @@ void InputController::right_click(sf::Vector2i pixel, const sf::RenderWindow& wi
     const core::Vec2F ground{core::Fixed::from_double(std::clamp(w.x, 0.5f, max_x)), core::Fixed::from_double(std::clamp(w.y, 0.5f, max_y))};
 
     const auto units = own_units(game);
+    // Ctrl + clic derecho: avanzar atacando lo que haya por el camino
+    if (!units.empty() && (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::LControl) || sf::Keyboard::isKeyPressed(sf::Keyboard::Key::RControl))) {
+        auto cmd = make(sim::CommandType::AttackMove, units);
+        cmd.target_pos = ground;
+        pending_.push_back(std::move(cmd));
+        markers_.push_back({render::world_to_iso(ground), 0.f});
+        return;
+    }
     if (units.empty()) {
         // Solo edificios: el clic derecho fija el punto de reunión
         std::vector<core::EntityHandle> buildings;
@@ -262,7 +273,7 @@ void InputController::right_click(sf::Vector2i pixel, const sf::RenderWindow& wi
     // Orden contextual según lo que haya bajo el cursor
     if (const auto hit = entities.pick(iso)) {
         const sim::SpawnableEntity* target = game.entity(*hit);
-        if (target && target->resource_node) {
+        if (target && target->resource_node && target->is_complete()) {
             auto cmd = make(sim::CommandType::Gather, units);
             cmd.target = *hit;
             pending_.push_back(std::move(cmd));
