@@ -1,6 +1,10 @@
 # Sistema de Mutabilidad de Unidades — PlantUML
 > Diagrama complementario a `architecture.md`. Solo cubre el sistema de Capabilities + Actions + Triggers.
-> La idea central: `ClassTag` describe lo que una unidad **ES**. `CapabilityTag` describe lo que una unidad **PUEDE HACER**. Son ortogonales y los segundos son totalmente dinámicos.
+> La idea central: `ClassSet` (clases definidas en datos) describe lo que una unidad **ES**. `CapabilityTag` describe lo que una unidad **PUEDE HACER**. Son ortogonales y los segundos son totalmente dinámicos.
+>
+> **v3**: alineado con `architecture.md` v3. Las referencias guardadas son `EntityHandle`, los dueños `PlayerId`, las clases `ClassSet`. `ActionConfig` pasa a ser un `std::variant` (copiable), los behaviors reciben un `SimContext`, los spawns/despawns se encolan para el final del tick y la probabilidad de los triggers usa el `Rng` determinista. `CapabilityTag` **sí** sigue siendo un enum: cada capability tiene código propio en el motor (su `IActionBehavior`).
+>
+> **Orden de implementación**: este sistema es la fase 6 del [`ROADMAP.md`](ROADMAP.md). Antes hace falta un juego jugable con capabilities fijas; diseñarlo ya está bien, implementarlo primero no.
 
 ---
 
@@ -89,7 +93,7 @@ note top of CapabilityTag
 
   Un caballero con mejora puede tener:
     { CAP_MOVE, CAP_ATTACK_MELEE, CAP_CONVERT }
-  con ConvertActionConfig restringido a { ClassTag::MILITARY_UNIT }.
+  con ConvertActionConfig restringido a { infantry }.
 end note
 
 @enduml
@@ -109,26 +113,34 @@ skinparam classFontColor #eaeaea
 
 package "ActionConfig Hierarchy" {
 
-  abstract class ActionConfig {
-    + CapabilityTag capability
-    + {abstract} ActionConfig* merge(const ActionConfig* other) const
-    ' merge() combina dos configs del mismo tipo
-    ' (ej: dos BuildActionConfigs se unen sus listas)
+  class ActionConfig <<std::variant>> {
+    using ActionConfig = std::variant<
+      BuildActionConfig, ConvertActionConfig,
+      MorphActionConfig, HealActionConfig,
+      GatherActionConfig, GarrisonAcceptConfig>
+    + ActionConfig merge(const ActionConfig& a, const ActionConfig& b)
+    ' std::visit: combina dos configs del mismo tipo
+    ' (ej: dos BuildActionConfigs unen sus listas)
   }
 
   note top of ActionConfig
-    Cada CapabilityTag tiene su propia subclase de ActionConfig.
-    Se almacenan en un mapa: CapabilityTag → ActionConfig*
-    Las subclases definen QUÉ puede hacer la unidad con esa capability.
+    v2 usaba una jerarquía con unique_ptr<ActionConfig>: eso hacía
+    no copiables a EntityStats, ObjectModifier y Modifier, que sí
+    se copian (de TechTemplate a PlayerState, de ObjSheet a la entidad).
+    Como el conjunto de configs es cerrado (una por capability),
+    std::variant da semántica de valor, sin new/delete ni fugas.
+    Se almacenan en std::map<CapabilityTag, ActionConfig>.
+    Cada alternativa define QUÉ puede hacer la unidad con esa capability.
+    Las "flechas de herencia" de abajo representan alternativas del variant.
   end note
 
   ' ─── Construcción ───────────────────────────────────────
   class BuildActionConfig {
-    + std::vector<ObjTag> buildable_tags
+    + std::vector<TypeId> buildable_tags
     ' Qué edificios puede construir esta unidad.
     ' Vacío = puede construir todo lo del jugador.
     ' { WATCH_TOWER } = solo torres de guardia.
-    + ActionConfig* merge(const ActionConfig* other) const
+    + {static} Self merge(const Self& a, const Self& b)
     ' merge: une los dos buildable_tags (union de conjuntos)
   }
 
@@ -142,20 +154,20 @@ package "ActionConfig Hierarchy" {
 
   ' ─── Conversión ─────────────────────────────────────────
   class ConvertActionConfig {
-    + std::vector<ClassTag>  targetable_classes
+    + ClassSet               targetable_classes
     ' Qué clases puede convertir (vacío = todas).
-    + std::vector<ObjTag>    targetable_tags
-    ' ObjTags específicos convertibles (vacío = todos de la clase).
+    + std::vector<TypeId>    targetable_tags
+    ' TypeIds específicos convertibles (vacío = todos de la clase).
     + bool                   can_convert_buildings
-    + float                  convert_speed_modifier
-    + ActionConfig* merge(const ActionConfig* other) const
+    + Fixed                  convert_speed_modifier
+    + {static} Self merge(const Self& a, const Self& b)
     ' merge: une targetable_classes y targetable_tags
   }
 
   note right of ConvertActionConfig
     Caso 2 — "caballeros que convierten infantería":
     Tech otorga CAP_CONVERT con:
-      targetable_classes = { MILITARY_UNIT }
+      targetable_classes = { infantry }
       can_convert_buildings = false
     Solo infantería militar. No edificios.
 
@@ -166,15 +178,15 @@ package "ActionConfig Hierarchy" {
 
   ' ─── Transformación / Morfosis ──────────────────────────
   class MorphActionConfig {
-    + ObjTag  target_form
+    + TypeId  target_form
     ' En qué se transforma la unidad.
     + bool    consume_original
     ' true  = la unidad original desaparece (sacrificio).
     ' false = la unidad solo cambia de stats (reversible).
     + bool    inherits_hp_percent
     ' Si el nuevo form hereda el % de HP actual.
-    + float   cooldown_sec
-    + ActionConfig* merge(const ActionConfig* other) const
+    + uint32_t cooldown_ticks
+    + {static} Self merge(const Self& a, const Self& b)
     ' merge: el último target_form gana (override)
   }
 
@@ -193,30 +205,30 @@ package "ActionConfig Hierarchy" {
 
   ' ─── Curación ───────────────────────────────────────────
   class HealActionConfig {
-    + std::vector<ClassTag>  healable_classes
-    + float                  heal_range
-    + float                  heal_rate_override
+    + ClassSet               healable_classes
+    + Fixed                  heal_range
+    + Fixed                  heal_rate_override
     ' 0 = usa HEAL_RATE del stat
-    + ActionConfig* merge(const ActionConfig* other) const
+    + {static} Self merge(const Self& a, const Self& b)
   }
 
   ' ─── Recolección ────────────────────────────────────────
   class GatherActionConfig {
     + std::vector<ResourceTag> gatherable_resources
     ' Vacío = todos. Pescador solo tiene FOOD.
-    + float gather_rate_override
+    + Fixed gather_rate_override
     ' 0 = usa GATHER_RATE del stat
-    + ActionConfig* merge(const ActionConfig* other) const
+    + {static} Self merge(const Self& a, const Self& b)
   }
 
   ' ─── Garrisón (aceptar unidades) ────────────────────────
   class GarrisonAcceptConfig {
-    + std::vector<ClassTag>  accepted_classes
+    + ClassSet               accepted_classes
     + uint32_t               capacity_override
     ' 0 = usa max_sheltered_units del EntityStats
-    + float                  arrow_per_unit
+    + Fixed                  arrow_per_unit
     ' Flechas que dispara el edificio por unidad guarecida
-    + ActionConfig* merge(const ActionConfig* other) const
+    + {static} Self merge(const Self& a, const Self& b)
   }
 
   ActionConfig <|-- BuildActionConfig
@@ -252,17 +264,17 @@ package "Action Behavior System (Strategy)" {
 
   abstract class IActionBehavior {
     + CapabilityTag required_capability
-    + {abstract} bool can_execute(\n    const SpawnableEntity* actor,\n    const WorldState& world) const
-    + {abstract} void on_start(\n    SpawnableEntity* actor,\n    WorldState& world,\n    sf::Vector2f target_pos,\n    SpawnableEntity* target_entity)
-    + {abstract} void on_tick(\n    SpawnableEntity* actor,\n    WorldState& world,\n    float dt)
-    + {abstract} void on_interrupt(\n    SpawnableEntity* actor)
+    + {abstract} bool can_execute(\n    const SpawnableEntity& actor,\n    const SimContext& ctx) const
+    + {abstract} void on_start(\n    SpawnableEntity& actor,\n    SimContext& ctx,\n    const Command& cmd)
+    + {abstract} void on_tick(\n    SpawnableEntity& actor,\n    SimContext& ctx)
+    + {abstract} void on_interrupt(\n    SpawnableEntity& actor)
     + {abstract} bool is_done() const
   }
 
   class AttackActionBehavior {
     ' Requiere: CAP_ATTACK_MELEE o CAP_ATTACK_RANGED
-    - SpawnableEntity* target
-    - float            attack_cooldown_remaining
+    - EntityHandle     target
+    - uint32_t         reload_ticks_remaining
     + bool can_execute(...) const
     + void on_start(...)
     + void on_tick(...)
@@ -273,10 +285,10 @@ package "Action Behavior System (Strategy)" {
   class BuildActionBehavior {
     ' Requiere: CAP_BUILD
     ' Respeta BuildActionConfig::buildable_tags
-    - ObjTag         building_to_place
-    - sf::Vector2f   build_target_pos
-    - float          build_progress
-    - SpawnableEntity* construction_site
+    - TypeId         building_to_place
+    - Vec2Fixed      build_target_pos
+    - Fixed          build_progress
+    - EntityHandle     construction_site
     + bool can_execute(...) const
     ' Verifica que building_to_place esté en BuildActionConfig
     + void on_start(...)
@@ -289,8 +301,8 @@ package "Action Behavior System (Strategy)" {
   class ConvertActionBehavior {
     ' Requiere: CAP_CONVERT
     ' Respeta ConvertActionConfig::targetable_classes y targetable_tags
-    - SpawnableEntity* target
-    - float            convert_elapsed
+    - EntityHandle     target
+    - uint32_t         convert_ticks_elapsed
     - bool             interrupted
     + bool can_execute(...) const
     ' Verifica que el target cumpla ConvertActionConfig
@@ -308,8 +320,10 @@ package "Action Behavior System (Strategy)" {
     + bool can_execute(...) const
     + void on_start(...)
     ' Ejecuta el morph:
-    '   Si consume_original: despawn actor, spawn target_form
-    '   Si no: cambia base_stats_ref al nuevo ObjSheet
+    '   Si consume_original: request_despawn(actor), request_spawn(target_form)
+    '   Si no: cambia type_id y classes al nuevo ObjSheet,
+    '          ajusta hp según inherits_hp_percent,
+    '          rebuild_capabilities() y cancela la acción en curso
     + void on_tick(...)
     + void on_interrupt(...)
     + bool is_done() const
@@ -317,20 +331,22 @@ package "Action Behavior System (Strategy)" {
 
   note right of MorphActionBehavior
     Caso 3 — unidad castillo → torre:
-    actor->get_action_config(CAP_MORPH)
+    actor.get_action_config(CAP_MORPH)
       → MorphActionConfig { TOWER, consume_original=true }
     on_start:
-      nueva_torre = world.spawn_manager.spawn(TOWER,
-                     actor->original_player,
-                     actor_pos)
-      world.spawn_manager.despawn(actor)
+      ctx.world.spawns.request_spawn(TOWER,
+                     actor.original_player,
+                     actor.current_player,
+                     actor.position)
+      ctx.world.spawns.request_despawn(actor.self)
+    (comprobar antes TileMap::can_place para el footprint de la torre)
     La unidad desaparece, aparece la torre.
   end note
 
   class GatherActionBehavior {
     ' Requiere: CAP_GATHER_*
-    - ResourceFont* resource_target
-    - float         carry_current
+    - EntityHandle  resource_target
+    - Fixed         carry_current
     + bool can_execute(...) const
     + void on_start(...)
     + void on_tick(...)
@@ -340,8 +356,8 @@ package "Action Behavior System (Strategy)" {
 
   class HealActionBehavior {
     ' Requiere: CAP_HEAL_UNITS
-    - SpawnableEntity* target
-    - float            heal_cooldown
+    - EntityHandle     target
+    - uint32_t         heal_ticks_remaining
     + bool can_execute(...) const
     + void on_start(...)
     + void on_tick(...)
@@ -415,7 +431,7 @@ package "Trigger System" {
   ' ─── Efectos que puede producir un trigger ───────────────
 
   struct SpawnTriggerEffect {
-    + ObjTag  spawn_tag
+    + TypeId  spawn_tag
     ' Qué unidad/edificio spawnear.
     + bool    inherit_original_player
     ' true = el spawneado tiene el mismo original_player
@@ -424,7 +440,7 @@ package "Trigger System" {
     ' true = el spawneado pertenece al current_player
     '        de la unidad que disparó el trigger.
     + bool    at_same_position
-    + float   hp_fraction_inherited
+    + Fixed   hp_fraction_inherited
     ' 0.0 = HP máximo. >0 = fracción del HP actual.
   }
 
@@ -437,9 +453,9 @@ package "Trigger System" {
       at_same_position        = true
       hp_fraction_inherited   = 0.5f
     }
-    El Man-at-Arms hereda ambos punteros
-    del caballero → si el caballero era azteca
-    convertido, el soldado también lo será.
+    El Man-at-Arms hereda ambos PlayerId
+    del caballero → si el caballero era de A
+    convertido por B, el soldado también lo será.
   end note
 
   struct ApplyModifierTriggerEffect {
@@ -471,12 +487,12 @@ package "Trigger System" {
     + std::string    trigger_id
     + TriggerEvent   on_event
     ' Cuándo dispara.
-    + ObjTag         filter_killed_tag
-    ' Solo para ON_KILL: solo dispara si mató a este ObjTag.
-    + ClassTag       filter_killed_class
+    + TypeId         filter_killed_tag
+    ' Solo para ON_KILL: solo dispara si mató a este TypeId.
+    + ClassSet       filter_killed_classes
     ' Solo para ON_KILL: solo dispara si mató a esta clase.
-    + float          probability
-    ' 1.0 = siempre. 0.5 = 50% de chance.
+    + uint16_t       probability_permille
+    ' 1000 = siempre. 500 = 50%. Se tira con ctx.rng (determinista).
     ' ─── Efectos al disparar ──────────────────────────────
     + std::vector<SpawnTriggerEffect>          spawn_effects
     + std::vector<ApplyModifierTriggerEffect>  modifier_effects
@@ -498,25 +514,32 @@ package "Trigger System" {
   ' ─── El despachador de triggers ─────────────────────────
 
   class TriggerDispatcher {
-    + {static} void dispatch(\n    TriggerEvent event,\n    SpawnableEntity* source,\n    SpawnableEntity* related,\n    WorldState& world,\n    GameState& game)
+    + {static} void dispatch(\n    TriggerEvent event,\n    SpawnableEntity& source,\n    EntityHandle related,\n    SimContext& ctx)
     ' Itera TriggerInstance del source,
     ' ejecuta los efectos de los que coincidan con event.
     ' related = quién lo mató (para ON_DEATH),
-    '           quién mató (para ON_KILL), etc.
+    '           a quién mató (para ON_KILL), etc.
+    ' Puede ser un handle muerto: comprobar con get().
   }
 
   note bottom of TriggerDispatcher
-    Caso 4 — flujo completo:
-    1. knight->hp = 0
-    2. WorldState::process_death(knight, killer)
-    3. TriggerDispatcher::dispatch(ON_DEATH, knight, killer, ...)
-    4. Encuentra TriggerInstance { "knight_death_rise" }
-    5. Ejecuta SpawnTriggerEffect:
-         new_unit = spawn_manager.spawn(MAN_AT_ARMS, pos)
-         new_unit->original_player = knight->original_player
-         new_unit->current_player  = knight->current_player
-         new_unit->hp_current = knight->hp_max * 0.5f
-    6. despawn(knight)
+    Caso 4 — flujo completo (fase "muertes" de GameState::step):
+    1. knight.hp_current <= 0 tras resolver el daño acumulado
+    2. TriggerDispatcher::dispatch(ON_DEATH, knight, killer, ctx)
+    3. Encuentra TriggerInstance { "death_knight_rise_as_infantry" }
+    4. Ejecuta SpawnTriggerEffect (encolado):
+         ctx.world.spawns.request_spawn(man_at_arms,
+             orig = knight.original_player,
+             cur  = knight.current_player,
+             pos  = knight.position,
+             hp_fraction = 0.5)
+    5. ctx.world.spawns.request_despawn(knight.self)
+    6. Al final del tick apply_pending() crea el soldado y borra al caballero.
+
+    Salvaguardas:
+    - Los spawns encolados no se procesan en el mismo tick,
+      así un trigger ON_SPAWN/ON_DEATH no puede encadenarse infinitamente.
+    - Límite de profundidad de dispatch (p. ej. 4) para cadenas ON_KILL → ON_DEATH.
   end note
 
   TriggerTemplate "1" *-- "many" SpawnTriggerEffect
@@ -559,7 +582,7 @@ package "ObjectModifier (v2)" {
     ' CAP_NONE = no quita. Cualquier otro = quita esa cap.
 
     ' ── ActionConfig asociada a la capability otorgada ────
-    + std::unique_ptr<ActionConfig>  action_config
+    + std::optional<ActionConfig>    action_config
     ' Si grant_capability != CAP_NONE y action_config != null,
     ' esta config se merge con la que ya tenga la unidad
     ' para esa capability.
@@ -581,7 +604,7 @@ package "ObjectModifier (v2)" {
   note right of ObjectModifier
     Caso 1 — tech "Ingeniería de Campo":
     Modifier {
-      target_class_tag = MILITARY_UNIT
+      target_classes = { military }
       object_mods = [{
         grant_capability = CAP_BUILD
         action_config = BuildActionConfig {
@@ -592,11 +615,11 @@ package "ObjectModifier (v2)" {
 
     Caso 2 — tech "Caballería Mística":
     Modifier {
-      target_obj_tag = KNIGHT
+      target_type_id = KNIGHT
       object_mods = [{
         grant_capability = CAP_CONVERT
         action_config = ConvertActionConfig {
-          targetable_classes = { MILITARY_UNIT }
+          targetable_classes = { infantry }
           can_convert_buildings = false
         }
       }]
@@ -615,13 +638,13 @@ package "ObjectModifier (v2)" {
     + std::string        modifier_id
     + ModifierSource     source
     + ModifierScope      scope
-    + ObjTag             target_obj_tag
-    + ClassTag           target_class_tag
+    + TypeId             target_type_id
+    + ClassSet           target_classes
     + bool               is_permanent
-    + float              duration_seconds
+    + uint32_t           duration_ticks
     ' ─── Payloads ────────────────────────────────────────
     + std::vector<StatModifier>    stat_mods
-    + std::vector<AttackBonus>     attack_bonuses
+    ' (los bonus de ataque son StatModifier con stat ATTACK + armor_class)
     + std::vector<ObjectModifier>  object_mods
     ' Un Modifier puede tener stat_mods Y object_mods a la vez.
     ' Ej: una tech puede +2 ataque Y otorgar CAP_BUILD.
@@ -648,35 +671,17 @@ skinparam classFontColor #eaeaea
 package "Data Layer — Actualizado" {
 
   class EntityStats {
-    + ClassTag  class_tag
-    + float     max_hp
-    + float     creation_time_sec
-    + AttackTag attack_type
-    + float     attack_dmg_base
-    + float     attack_rate_base
-    + std::vector<AttackBonus>   base_attack_bonuses
-    + ArmorTag  armor_type
-    + float     armor_melee_base
-    + float     armor_pierce_base
-    + float     move_speed_base
-    + uint32_t  sight_range_quads
-    + uint32_t  max_sheltered_units
-    + float     size_factor
-    + float     collision_w
-    + float     collision_h
-    + bool      is_convertible
-    + bool      has_cooldown_bar
-    + float     gather_rate_base
-    + float     carry_capacity_base
-    + uint32_t  population_cost
+    ' ─── Campos de combate, movimiento y economía ────────
+    ' (ver architecture.md, Diagrama 3; no se repiten aquí)
     ' ─── NUEVO: capabilities base ────────────────────────
-    + std::unordered_set<CapabilityTag>  base_capabilities
+    + CapabilitySet  base_capabilities
+    ' std::bitset<CAP_COUNT>: has() O(1), copia barata, orden determinista
     ' Lo que la unidad puede hacer por defecto.
     ' Ej: KNIGHT = { CAP_MOVE, CAP_ATTACK_MELEE, CAP_GARRISON_ENTER }
     '     VILLAGER = { CAP_MOVE, CAP_GATHER_*, CAP_BUILD, CAP_REPAIR }
     '     TOWER = { CAP_ATTACK_RANGED, CAP_GARRISON_ACCEPT }
     ' ─── NUEVO: action configs base ──────────────────────
-    + std::unordered_map<CapabilityTag,\n  std::unique_ptr<ActionConfig>>  base_action_configs
+    + std::map<CapabilityTag, ActionConfig>  base_action_configs
     ' Config por defecto para cada capability.
     ' Ej: VILLAGER → BuildActionConfig{ buildable_tags={} (vacío=todo) }
     ' ─── NUEVO: triggers innatos ─────────────────────────
@@ -717,12 +722,12 @@ package "Data Layer — Actualizado" {
   end note
 
   class ObjSheet {
-    + ObjTag       tag
+    + TypeId       tag
     + EntityStats  base_stats
     + ProductionRecipe recipe
     + std::vector<std::string>  available_skill_ids
     + std::vector<std::string>  available_tech_ids
-    + std::vector<ObjTag>       can_produce_tags
+    + std::vector<TypeId>       can_produce_tags
     ' (sin cambios estructurales: las capabilities
     '  ya viven dentro de EntityStats)
   }
@@ -752,26 +757,26 @@ package "Entity Layer — Actualizado" {
   }
 
   class SpawnableEntity {
-    + ObjTag     obj_tag
-    + ClassTag   class_tag
-    + float      hp_current
-    + PlayerState* original_player
-    + PlayerState* current_player
+    + TypeId     type_id
+    + ClassSet   classes
+    + int32_t    hp_current
+    + PlayerId original_player
+    + PlayerId current_player
 
-    + const EntityStats*  base_stats_ref
+    ' stats base: data.sheet(type_id).base_stats (sin puntero guardado)
 
     + InstanceModifierStack  instance_modifiers
 
     ' ─── NUEVO: capabilities computadas ──────────────────
-    + std::unordered_set<CapabilityTag>  current_capabilities
+    + CapabilitySet  current_capabilities
     ' = base_capabilities
-    '   + caps otorgadas por original_player->active_modifiers
+    '   + caps otorgadas por players[original_player].active_modifiers
     '   + caps otorgadas por instance_modifiers
     '   - caps removidas por cualquiera de los anteriores
-    ' Se recalcula cuando algún modifier cambia (is_dirty).
+    ' Se recalcula cuando cambia la época del jugador o is_dirty de la instancia.
 
     ' ─── NUEVO: action configs mergeadas ─────────────────
-    + std::unordered_map<CapabilityTag,\n  std::unique_ptr<ActionConfig>>  current_action_configs
+    + std::map<CapabilityTag, ActionConfig>  current_action_configs
     ' = base_action_configs mergeadas con las de los modifiers.
 
     ' ─── NUEVO: triggers activos ──────────────────────────
@@ -783,43 +788,50 @@ package "Entity Layer — Actualizado" {
     + std::vector<ActiveSkillState>  skill_states
 
     ' ─── Garrisón y producción (igual que antes) ──────────
-    + std::vector<SpawnableEntity*>  sheltered_units
-    + std::queue<ProductionJob>      production_queue
+    + std::vector<EntityHandle>  sheltered_units
+    + std::deque<ProductionJob>      production_queue
 
     ' ─── Acción en curso (la que el jugador ordenó) ───────
     + std::unique_ptr<IActionBehavior>  current_action
     ' Solo una acción ordenada a la vez (move, attack, build...).
     ' Las skills van en skill_states separadas.
+    ' unique_ptr hace la entidad move-only: SlotMap debe moverla, no copiarla.
+    ' El behavior guarda EntityHandle de sus objetivos, nunca punteros.
+    + std::deque<Command>  queued_orders
+    ' órdenes encoladas con shift
+
+    ' ─── Caché de capabilities ────────────────────────────
+    + uint32_t capabilities_epoch
+    ' época del jugador original con la que se reconstruyó
 
     ' ─── Métodos de capabilities ──────────────────────────
     + bool has_capability(CapabilityTag cap) const
     + const ActionConfig* get_action_config(CapabilityTag cap) const
-    + void rebuild_capabilities()
+    ' puntero de observación al valor del map; nullptr si no la tiene
+    + void rebuild_capabilities(const PlayerState& original)
     ' Recalcula current_capabilities y current_action_configs
     ' desde base + player mods + instance mods.
-    ' Llamado cuando is_dirty en algún modifier stack.
+    ' Se llama al empezar el tick de la entidad si
+    '   capabilities_epoch != players[original_player].modifier_epoch
+    '   o instance_modifiers.is_dirty
 
-    ' ─── Métodos de stats (sin cambios) ──────────────────
-    + float get_stat(StatTag stat) const
-    + std::vector<AttackBonus> get_attack_bonuses() const
+    ' ─── Métodos de stats (ver architecture.md §4) ────────
+    + Fixed get_stat(StatTag s, ArmorClassId c, const Players& p) const
 
     ' ─── Acciones básicas ─────────────────────────────────
-    + void order_action(\n    std::unique_ptr<IActionBehavior> action)
-    + void take_damage(float raw_dmg, AttackTag type)
-    + void heal(float amount)
-    + void convert_to(PlayerState* new_owner)
-    + void garrison(SpawnableEntity* unit)
-    + void eject_all()
+    + void order_action(\n    std::unique_ptr<IActionBehavior> action,\n    SimContext& ctx, const Command& cmd)
     + bool is_converted() const
-    + void tick(float dt, WorldState& world, GameState& game)
-    ' tick(): avanza current_action, skills, y verifica triggers
+    + void tick(SimContext& ctx)
+    ' tick(): avanza current_action y skills.
+    ' Daño, curación, conversión y garrison los aplican
+    ' sistemas de GameState (tocan a más de una entidad).
   }
 
   note right of SpawnableEntity
-    rebuild_capabilities() hace:
-    1. Copia base_stats_ref->base_capabilities
-    2. Para cada Modifier en original_player->active_modifiers:
-         - Filtra si aplica a (obj_tag, class_tag)
+    rebuild_capabilities(original) hace:
+    1. Copia base_capabilities del ObjSheet de type_id
+    2. Para cada Modifier en original.active_modifiers:
+         - Filtra si aplica a (type_id, classes)
          - Procesa cada ObjectModifier:
              grant_capability → añade a current_capabilities
              remove_capability → quita de current_capabilities
@@ -831,14 +843,16 @@ package "Entity Layer — Actualizado" {
     has_capability() es O(1) → solo lookup en current_capabilities.
 
     order_action() hace:
-      if current_action: current_action->on_interrupt(this)
+      if current_action: current_action->on_interrupt(*this)
       current_action = std::move(action)
-      current_action->on_start(this, world, ...)
+      current_action->on_start(*this, ctx, cmd)
 
-    tick() hace:
-      current_action->on_tick(this, world, dt)
-      if current_action->is_done(): current_action = nullptr
-      for skill in skill_states: skill.tick(dt)
+    tick(ctx) hace:
+      if current_action:
+        current_action->on_tick(*this, ctx)
+        if current_action->is_done():
+          current_action = siguiente de queued_orders o nullptr
+      for skill in skill_states: avanzar cooldown/duración
   end note
 
   SpawnableEntity "1" *-- "1"    InstanceModifierStack
@@ -870,7 +884,7 @@ package "Caso 1 — Unidad que construye torres (no aldeano)" #0f2040 {
     **Tech: "Ingeniería de Campo"**
     Researched at: BARRACKS (feudal age)
     grants Modifier {
-      target_class_tag = MILITARY_UNIT
+      target_classes = { military }
       object_mods = [ObjectModifier {
         grant_capability  = CAP_BUILD
         action_config     = BuildActionConfig {
@@ -901,11 +915,11 @@ package "Caso 2 — Caballeros que convierten infantería" #1a0f40 {
   note as C2
     **Tech: "Caballería Mística"** (unique tech del Castillo)
     grants Modifier {
-      target_obj_tag = KNIGHT  (solo caballeros)
+      target_type_id = KNIGHT  (solo caballeros)
       object_mods = [ObjectModifier {
         grant_capability  = CAP_CONVERT
         action_config     = ConvertActionConfig {
-                              targetable_classes = { MILITARY_UNIT }
+                              targetable_classes = { infantry }
                               can_convert_buildings = false
                               convert_speed_modifier = 0.5f
                             }
@@ -916,17 +930,17 @@ package "Caso 2 — Caballeros que convierten infantería" #1a0f40 {
     ► Solo los KNIGHT del jugador:
         current_capabilities.contains(CAP_CONVERT) == true
         get_action_config(CAP_CONVERT)
-          → ConvertActionConfig { MILITARY_UNIT, no buildings, 0.5x speed }
+          → ConvertActionConfig { infantry, no buildings, 0.5x speed }
 
     ► MONK del mismo jugador sigue con su ConvertActionConfig base:
         targetable_classes = {} (vacío = todo)
         can_convert_buildings = true
-        (los modifiers solo aplican a KNIGHT por target_obj_tag)
+        (los modifiers solo aplican a KNIGHT por target_type_id)
 
     ► Knight intenta convertir un TREBUCHET (siege weapon):
         ConvertActionBehavior::can_execute():
-          target->class_tag == SIEGE_WEAPON
-          SIEGE_WEAPON no está en targetable_classes → ✗ cancelado
+          target.classes == { siege, military }
+          ninguna está en targetable_classes = { infantry } → ✗ cancelado
   end note
 }
 
@@ -945,16 +959,18 @@ package "Caso 3 — Unidad se sacrifica → edificio" #401a0f {
     También tiene skill activa "Ritual del Sacrificio":
     → Cuando el jugador la activa, ejecuta:
     SkillBehavior (MorphSkillBehavior):
-      1. Verifica actor->has_capability(CAP_MORPH) → true
-      2. Lee actor->get_action_config(CAP_MORPH)
+      1. Verifica actor.has_capability(CAP_MORPH) → true
+      2. Lee actor.get_action_config(CAP_MORPH)
              → MorphActionConfig { RITUAL_TOWER, consume=true }
-      3. pos = world.spatial.get_position(actor)
-      4. nueva_torre = spawn_manager.spawn(RITUAL_TOWER,
-                         actor->original_player, pos)
-      5. spawn_manager.despawn(actor)
+      3. Verifica TileMap::can_place(RITUAL_TOWER, tile de actor.position)
+      4. ctx.world.spawns.request_spawn(RITUAL_TOWER,
+                         actor.original_player,
+                         actor.current_player, actor.position)
+      5. ctx.world.spawns.request_despawn(actor.self)
 
-    ► Sin la tech "Ingeniería de Campo" un guerrero normal
-      NO tiene CAP_MORPH, así que la skill no aplica a él.
+    ► Un guerrero normal NO tiene CAP_MORPH (ni base ni otorgada
+      por ninguna tech), así que la skill no aplica a él.
+      (Ojo: "Ingeniería de Campo" del Caso 1 otorga CAP_BUILD, no CAP_MORPH.)
     ► Solo el RITUAL_WARRIOR tiene esta capability en su base.
   end note
 }
@@ -971,7 +987,7 @@ package "Caso 4 — Caballero muere → jinete se levanta" #0f400f {
     TriggerTemplate {
       trigger_id    = "death_knight_rise_as_infantry"
       on_event      = ON_DEATH
-      probability   = 1.0f
+      probability_permille = 1000
       spawn_effects = [SpawnTriggerEffect {
         spawn_tag               = MAN_AT_ARMS
         inherit_original_player = true
@@ -981,25 +997,24 @@ package "Caso 4 — Caballero muere → jinete se levanta" #0f400f {
       }]
     }
 
-    **Flujo en GameState::tick():**
-    1. dk->hp_current -= net_damage → llega a 0
-    2. WorldState::process_death(dk, killer)
-    3. TriggerDispatcher::dispatch(ON_DEATH, dk, killer, world, game)
-    4. Itera dk->active_triggers:
+    **Flujo en GameState::step() (fase "muertes"):**
+    1. dk.hp_current <= 0 tras resolver el daño acumulado
+    2. TriggerDispatcher::dispatch(ON_DEATH, dk, killer, ctx)
+    3. Itera dk.active_triggers:
          TriggerInstance { "death_knight_rise_as_infantry", charges=-1 }
-         on_event == ON_DEATH → dispara
-    5. Ejecuta SpawnTriggerEffect:
-         new_unit = spawn_manager.spawn(MAN_AT_ARMS, dk_pos)
-         new_unit->original_player = dk->original_player
-         new_unit->current_player  = dk->current_player
-         new_unit->hp_current = new_unit->base_stats->max_hp * 0.5f
-         new_unit->rebuild_capabilities()
-    6. spawn_manager.despawn(dk)
+         on_event == ON_DEATH → tira ctx.rng contra probability_permille → dispara
+    4. Ejecuta SpawnTriggerEffect (encolado):
+         ctx.world.spawns.request_spawn(man_at_arms,
+             orig = dk.original_player, cur = dk.current_player,
+             pos = dk.position, hp_fraction = 0.5)
+    5. ctx.world.spawns.request_despawn(dk.self)
+    6. apply_pending() al final del tick: crea el soldado
+       (que ejecuta rebuild_capabilities en su primer tick) y borra al dk.
 
     ► Si el Death Knight había sido convertido:
-         original_player = &azteca, current_player = &espanol
-         → El nuevo Man-at-Arms también es azteca-convertido-espanol
-         → Sus stats son del azteca, su allegiance es española
+         original_player = A, current_player = B
+         → El nuevo Man-at-Arms también es "de A, controlado por B"
+         → Sus stats salen de A, su allegiance es de B
   end note
 }
 @enduml
