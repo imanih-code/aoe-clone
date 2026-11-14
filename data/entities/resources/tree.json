@@ -1,0 +1,9 @@
+{
+  "key": "tree",
+  "name": "Árbol",
+  "kind": "resource",
+  "classes": ["resource_node", "tree"],
+  "hp": 20,
+  "resource": { "type": "wood", "amount": 100 },
+  "visual": { "shape": "tree", "size": 0.38, "height": 1.2, "color": "#2e7d32", "label": "Árbol" }
+}

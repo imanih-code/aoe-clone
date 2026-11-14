@@ -1,0 +1,11 @@
+{
+  "key": "town_center",
+  "name": "Plaza mayor",
+  "kind": "building",
+  "classes": ["building"],
+  "hp": 2400,
+  "footprint": [4, 4],
+  "sight": 8,
+  "population_provided": 5,
+  "visual": { "shape": "building", "height": 1.6, "label": "Plaza mayor" }
+}

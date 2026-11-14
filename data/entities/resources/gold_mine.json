@@ -1,0 +1,9 @@
+{
+  "key": "gold_mine",
+  "name": "Mina de oro",
+  "kind": "resource",
+  "classes": ["resource_node", "mine"],
+  "hp": 1,
+  "resource": { "type": "gold", "amount": 800 },
+  "visual": { "shape": "mine", "size": 0.42, "color": "#e2b93b", "label": "Oro" }
+}

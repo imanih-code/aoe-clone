@@ -1,0 +1,11 @@
+{
+  "key": "house",
+  "name": "Casa",
+  "kind": "building",
+  "classes": ["building"],
+  "hp": 550,
+  "footprint": [2, 2],
+  "sight": 2,
+  "population_provided": 5,
+  "visual": { "shape": "building", "height": 0.9, "label": "Casa" }
+}

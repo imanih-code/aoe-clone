@@ -1,0 +1,9 @@
+{
+  "key": "stone_mine",
+  "name": "Cantera de piedra",
+  "kind": "resource",
+  "classes": ["resource_node", "mine"],
+  "hp": 1,
+  "resource": { "type": "stone", "amount": 350 },
+  "visual": { "shape": "mine", "size": 0.42, "color": "#9a9a9a", "label": "Piedra" }
+}

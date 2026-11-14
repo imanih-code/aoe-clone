@@ -1,0 +1,12 @@
+{
+  "key": "scout",
+  "name": "Explorador a caballo",
+  "kind": "unit",
+  "classes": ["unit", "military", "cavalry"],
+  "hp": 45,
+  "speed": 1.55,
+  "radius": 0.3,
+  "sight": 6,
+  "population": 1,
+  "visual": { "shape": "cavalry", "size": 0.3, "label": "Explorador" }
+}

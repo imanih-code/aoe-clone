@@ -1,0 +1,128 @@
+#include "app/game_app.hpp"
+
+#include <algorithm>
+#include <iostream>
+
+#include <SFML/Graphics/Image.hpp>
+#include <SFML/Graphics/Texture.hpp>
+#include <SFML/Window/Event.hpp>
+#include <SFML/Window/Mouse.hpp>
+
+#include "render/iso.hpp"
+#include "render/text.hpp"
+
+namespace app {
+
+GameApp::GameApp(AppOptions options)
+    : options_(std::move(options)),
+      data_(data::DataRegistry::load(options_.data_dir)),
+      window_(sf::VideoMode({1280u, 720u}), render::utf8("AoE Clone — prototipo")),
+      font_(render::load_ui_font()),
+      game_(std::make_unique<sim::GameState>(data_, options_.game)),
+      camera_(window_.getSize(), game_->map().width(), game_->map().height()),
+      entity_renderer_(font_, data_),
+      hud_(font_),
+      input_(1) {
+    window_.setVerticalSyncEnabled(true);
+    map_renderer_.build(game_->map());
+    const core::Vec2F start = game_->start_position(input_.local_player());
+    camera_.center_on_world({start.x.to_float(), start.y.to_float() + 2.f});
+}
+
+int GameApp::run() {
+    constexpr float kStep = 1.f / static_cast<float>(sim::kTicksPerSecond);
+    sf::Clock clock;
+    float accumulator = 0.f;
+    float fps = 0.f;
+    float fps_timer = 0.f;
+    int fps_frames = 0;
+    int frame = 0;
+
+    while (window_.isOpen()) {
+        while (const std::optional event = window_.pollEvent()) {
+            if (event->is<sf::Event::Closed>()) {
+                window_.close();
+                break;
+            }
+            if (const auto* resized = event->getIf<sf::Event::Resized>()) camera_.on_resize(resized->size);
+            input_.handle_event(*event, window_, camera_, *game_, entity_renderer_, view_options_);
+        }
+        if (!window_.isOpen()) break;
+
+        const float dt = std::min(clock.restart().asSeconds(), 0.25f);  // evita la espiral de la muerte
+        camera_.update(dt, window_);
+        input_.update(dt, *game_);
+
+        // Simulación a tick fijo; el render interpola con alpha (architecture.md §9.1)
+        accumulator += dt;
+        while (accumulator >= kStep) {
+            const auto commands = input_.take_commands(game_->tick());
+            game_->step(commands);
+            accumulator -= kStep;
+        }
+
+        fps_timer += dt;
+        ++fps_frames;
+        if (fps_timer >= 0.5f) {
+            fps = static_cast<float>(fps_frames) / fps_timer;
+            fps_timer = 0.f;
+            fps_frames = 0;
+        }
+
+        // Modo demo: seleccionar las unidades propias y mandarlas a moverse
+        if (options_.demo && frame == 5) {
+            const auto& me = game_->player(input_.local_player());
+            input_.select(me.units);
+            const core::Vec2F s = game_->start_position(input_.local_player());
+            input_.order_move_world({s.x + core::Fixed::from_int(6), s.y + core::Fixed::from_int(4)}, *game_);
+        }
+
+        draw_frame(accumulator / kStep, fps);
+        ++frame;
+
+        if (!options_.screenshot.empty() && frame == options_.screenshot_frame) {
+            sf::Texture capture(window_.getSize());
+            capture.update(window_);
+            if (!capture.copyToImage().saveToFile(options_.screenshot)) {
+                std::cerr << "No se pudo guardar la captura en " << options_.screenshot << "\n";
+                return 1;
+            }
+            std::cout << "Captura guardada en " << options_.screenshot.string() << "\n";
+            window_.close();
+        }
+    }
+    return 0;
+}
+
+void GameApp::draw_frame(float alpha, float fps) {
+    window_.clear(sf::Color(18, 22, 28));
+
+    // ─── Mundo (vista de la cámara) ──────────────────────────────────────
+    window_.setView(camera_.view());
+    map_renderer_.draw(window_, camera_.visible_rect(), view_options_.grid);
+    entity_renderer_.draw_world(window_, *game_, camera_, alpha, input_.selection());
+    entity_renderer_.draw_markers(window_, input_.markers());
+
+    const sf::Vector2i mouse = sf::Mouse::getPosition(window_);
+    const sf::Vector2f mouse_iso = window_.mapPixelToCoords(mouse, camera_.view());
+    const auto hovered = entity_renderer_.pick(mouse_iso);
+    const sf::Vector2f mouse_world = render::iso_to_world(mouse_iso);
+    const core::TilePos hovered_tile{static_cast<int32_t>(std::floor(mouse_world.x)), static_cast<int32_t>(std::floor(mouse_world.y))};
+
+    // ─── Interfaz (píxeles de pantalla) ──────────────────────────────────
+    const sf::Vector2f size(window_.getSize());
+    window_.setView(sf::View(sf::FloatRect({0.f, 0.f}, size)));
+    entity_renderer_.draw_labels(window_, *game_, camera_, view_options_, hovered, input_.selection());
+
+    render::HudInfo info;
+    info.local_player = input_.local_player();
+    info.selection = input_.selection();
+    info.hovered_tile = hovered_tile;
+    info.fps = fps;
+    info.drag_rect = input_.drag_rect();
+    hud_.draw(window_, *game_, info, view_options_);
+
+    window_.display();
+}
+
+}  // namespace app

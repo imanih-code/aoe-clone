@@ -1,0 +1,9 @@
+{
+  // Clases de entidad. Una entidad puede tener varias. Máximo 64.
+  "classes": [
+    "unit", "building", "resource_node",
+    "villager", "civilian", "military",
+    "infantry", "cavalry", "archer", "siege", "ship",
+    "tree", "mine", "bush"
+  ]
+}

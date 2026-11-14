@@ -1,0 +1,9 @@
+{
+  "key": "berry_bush",
+  "name": "Arbusto de bayas",
+  "kind": "resource",
+  "classes": ["resource_node", "bush"],
+  "hp": 1,
+  "resource": { "type": "food", "amount": 125 },
+  "visual": { "shape": "bush", "size": 0.36, "color": "#b0306a", "label": "Bayas" }
+}

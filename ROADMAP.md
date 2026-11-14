@@ -16,6 +16,8 @@ Principio: **vertical slice primero**. Un aldeano que corta madera de punta a pu
 
 **Hecho cuando**: `cmake --preset ... && cmake --build ...` compila en Windows desde cero, abre una ventana y `ctest` pasa los tests de `SlotMap` (handle muerto → `get()` devuelve `nullptr`) y `Fixed`.
 
+> **Estado (2026-11-14)**: hecha, salvo retirar el prototipo Python. Compilado con GCC 16.2 (WinLibs) + CMake 4.4 + Ninja; `ctest` en verde.
+
 ## Fase 1 — Mapa y cámara
 
 - `TileMap` + generador simple (hierba, agua, bosque) con semilla.
@@ -23,6 +25,8 @@ Principio: **vertical slice primero**. Un aldeano que corta madera de punta a pu
 - Conversión pantalla ↔ tile y resaltado del tile bajo el ratón.
 
 **Hecho cuando**: mapa de 128×128 a 60 FPS, el tile bajo el cursor es el correcto en todos los zooms.
+
+> **Estado (2026-11-14)**: hecha con mapa de 96×96 (`--size 128` disponible). Generador con lagos, orillas, tierra alrededor de las bases, bosques y minas. Pendiente comprobar los 60 FPS a 128×128.
 
 ## Fase 2 — Entidades, datos y movimiento
 
@@ -32,6 +36,8 @@ Principio: **vertical slice primero**. Un aldeano que corta madera de punta a pu
 - Sprites desde atlas, orden por profundidad, interpolación entre ticks.
 
 **Hecho cuando**: 200 unidades seleccionables se mueven por el mapa rodeando agua y árboles sin bajar de 60 FPS, y añadir una unidad nueva es solo crear un JSON.
+
+> **Estado (2026-11-14)**: casi hecha. Entidades por JSON con figuras etiquetadas, selección (clic, caja, shift, doble clic), mover con A* + suavizado + formación, interpolación entre ticks. Pendiente: la prueba de 200 unidades y la cola de pathfinding con presupuesto por tick (hoy se calcula todo al recibir la orden). El movimiento es todavía una `MoveOrder` dentro de la entidad; pasa a `IActionBehavior` en la Fase 3.
 
 ## Fase 3 — Economía
 

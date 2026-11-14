@@ -1,0 +1,12 @@
+{
+  "key": "villager",
+  "name": "Aldeano",
+  "kind": "unit",
+  "classes": ["unit", "villager", "civilian"],
+  "hp": 25,
+  "speed": 0.8,
+  "radius": 0.2,
+  "sight": 4,
+  "population": 1,
+  "visual": { "shape": "unit", "size": 0.22, "label": "Aldeano" }
+}
