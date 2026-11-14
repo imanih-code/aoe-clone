@@ -1,12 +1,16 @@
 {
   "key": "villager",
+  "extends": "_unit_base",
   "name": "Aldeano",
-  "kind": "unit",
+  "description": "Recolecta recursos y construye edificios.",
   "classes": ["unit", "villager", "civilian"],
+  "capabilities": ["move", "gather", "build"],
   "hp": 25,
   "speed": 0.8,
-  "radius": 0.2,
-  "sight": 4,
-  "population": 1,
-  "visual": { "shape": "unit", "size": 0.22, "label": "Aldeano" }
+  "cost": { "food": 50 },
+  "train_time": 25,
+  // recursos por segundo; "carry" = cuánto lleva antes de ir a depositar
+  "gather": { "carry": 10, "rates": { "food": 0.33, "wood": 0.39, "gold": 0.38, "stone": 0.36 } },
+  "builds": ["house", "lumber_camp", "mining_camp", "mill", "barracks"],
+  "visual": { "label": "Aldeano" }
 }

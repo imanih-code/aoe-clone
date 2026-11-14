@@ -67,12 +67,12 @@ TEST_CASE("Partida: las unidades llegan a su destino") {
     const auto villager = game.player(1).units.front();
     const core::Vec2F start = game.entity(villager)->position;
     const core::Vec2F target{start.x + core::Fixed::from_int(3), start.y + core::Fixed::from_int(2)};
-    sim::Command cmd{0, 1, sim::CommandType::Move, {villager}, target, {}};
+    sim::Command cmd{0, 1, sim::CommandType::Move, {villager}, target, {}, {}, {}, 0};
     game.step(std::span<const sim::Command>(&cmd, 1));
     for (int i = 0; i < 20 * 30; ++i) game.step({});
     const auto* e = game.entity(villager);
     REQUIRE(e);
-    CHECK_FALSE(e->move);
+    CHECK_FALSE(e->action);
     CHECK(core::length(e->position - target) < core::Fixed::from_int(2));
 }
 
@@ -80,7 +80,7 @@ TEST_CASE("Partida: no se pueden mover unidades de otro jugador") {
     sim::GameState game(registry(), sim::GameConfig{7, 96, 96, 2});
     const auto enemy = game.player(2).units.front();
     const core::Vec2F before = game.entity(enemy)->position;
-    sim::Command cmd{0, 1, sim::CommandType::Move, {enemy}, {core::Fixed::from_int(10), core::Fixed::from_int(10)}, {}};
+    sim::Command cmd{0, 1, sim::CommandType::Move, {enemy}, {core::Fixed::from_int(10), core::Fixed::from_int(10)}, {}, {}, {}, 0};
     game.step(std::span<const sim::Command>(&cmd, 1));
     for (int i = 0; i < 40; ++i) game.step({});
     CHECK(game.entity(enemy)->position == before);
@@ -97,8 +97,8 @@ TEST_CASE("Determinismo: misma seed y comandos → mismo estado tick a tick") {
         std::vector<sim::Command> ca, cb;
         if (t % 50 == 0) {
             const core::Vec2F target{core::Fixed::from_int(20 + t / 10), core::Fixed::from_int(30 + t / 20)};
-            ca.push_back({static_cast<uint32_t>(t), 1, sim::CommandType::Move, units_a, target, {}});
-            cb.push_back({static_cast<uint32_t>(t), 1, sim::CommandType::Move, units_b, target, {}});
+            ca.push_back({static_cast<uint32_t>(t), 1, sim::CommandType::Move, units_a, target, {}, {}, {}, 0});
+            cb.push_back({static_cast<uint32_t>(t), 1, sim::CommandType::Move, units_b, target, {}, {}, {}, 0});
         }
         a.step(ca);
         b.step(cb);

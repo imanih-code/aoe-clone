@@ -1,0 +1,12 @@
+{
+  "key": "militia",
+  "extends": "_unit_base",
+  "name": "Miliciano",
+  "description": "Infantería básica. Barata y rápida de entrenar.",
+  "classes": ["unit", "military", "infantry"],
+  "hp": 40,
+  "speed": 0.9,
+  "cost": { "food": 60, "gold": 20 },
+  "train_time": 21,
+  "visual": { "size": 0.24, "label": "Miliciano" }
+}

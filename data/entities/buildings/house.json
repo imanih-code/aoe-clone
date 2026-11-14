@@ -1,11 +1,13 @@
 {
   "key": "house",
+  "extends": "_building_base",
   "name": "Casa",
-  "kind": "building",
-  "classes": ["building"],
+  "description": "+5 de población.",
   "hp": 550,
   "footprint": [2, 2],
   "sight": 2,
   "population_provided": 5,
-  "visual": { "shape": "building", "height": 0.9, "label": "Casa" }
+  "cost": { "wood": 25 },
+  "build_time": 25,
+  "visual": { "height": 0.9, "label": "Casa" }
 }

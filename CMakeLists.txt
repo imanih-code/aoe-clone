@@ -58,6 +58,7 @@ add_library(sim STATIC
     src/sim/world/pathfinder.cpp
     src/sim/game/game_state.cpp
     src/sim/game/map_generation.cpp
+    src/sim/actions/actions.cpp
 )
 target_include_directories(sim PUBLIC src)
 target_link_libraries(sim PUBLIC nlohmann_json::nlohmann_json PRIVATE aoe_warnings)
@@ -72,6 +73,7 @@ add_executable(aoe_clone
     src/render/hud.cpp
     src/render/text.cpp
     src/input/input_controller.cpp
+    src/ui/command_panel.cpp
 )
 target_link_libraries(aoe_clone PRIVATE sim SFML::Graphics aoe_warnings)
 target_compile_definitions(aoe_clone PRIVATE AOE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
@@ -93,6 +95,7 @@ if(AOE_BUILD_TESTS)
         tests/test_main.cpp
         tests/test_core.cpp
         tests/test_sim.cpp
+        tests/test_economy.cpp
     )
     target_include_directories(sim_tests PRIVATE ${doctest_SOURCE_DIR}/doctest)
     target_link_libraries(sim_tests PRIVATE sim aoe_warnings)

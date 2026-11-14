@@ -1,0 +1,8 @@
+{
+  "key": "_building_base",
+  "abstract": true,
+  "kind": "building",
+  "classes": ["building"],
+  "sight": 3,
+  "visual": { "shape": "building", "height": 1.0 }
+}

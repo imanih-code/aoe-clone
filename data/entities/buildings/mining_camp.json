@@ -1,0 +1,8 @@
+{
+  "key": "mining_camp",
+  "extends": "_camp_base",
+  "name": "Campamento minero",
+  "description": "Depósito de oro y piedra.",
+  "dropoff": ["gold", "stone"],
+  "visual": { "label": "Campamento minero" }
+}

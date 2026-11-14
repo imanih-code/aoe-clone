@@ -1,7 +1,9 @@
 #include "data/data_registry.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <fstream>
+#include <functional>
 
 #include <nlohmann/json.hpp>
 
@@ -42,6 +44,15 @@ ResourceTag parse_resource(const std::string& s, const std::string& where) {
     if (s == "gold") return ResourceTag::Gold;
     if (s == "stone") return ResourceTag::Stone;
     throw DataError(where + ": recurso desconocido '" + s + "' (food, wood, gold, stone)");
+}
+
+// Debe coincidir con sim::kTicksPerSecond (data no depende de sim).
+constexpr double kTicksPerSecondData = 20.0;
+
+ResourceArray parse_resources(const json& j, const std::string& where) {
+    ResourceArray out{};
+    for (const auto& [name, amount] : j.items()) out[index_of(parse_resource(name, where))] = amount.get<int32_t>();
+    return out;
 }
 
 EntityKind parse_kind(const std::string& s, const std::string& where) {
@@ -107,18 +118,66 @@ DataRegistry DataRegistry::load(const fs::path& data_dir) {
     }
 
     // ─── Entidades ───────────────────────────────────────────────────────
+    // 1) Leer todos los ficheros (incluidas plantillas abstractas)
+    // 2) Resolver "extends" con JSON merge patch (architecture.md §11.8)
+    // 3) Crear fichas de las no abstractas, en orden de fichero → TypeId estables
+    // 4) Resolver referencias entre fichas (trains, builds)
     const auto files = json_files_in(data_dir / "entities");
     if (files.empty()) throw DataError((data_dir / "entities").string() + ": no hay ficheros .json");
 
+    struct RawEntity {
+        json body;
+        std::string file;
+    };
+    std::map<std::string, RawEntity, std::less<>> raw;
+    std::vector<std::string> order;
     for (const auto& path : files) {
-        const std::string where = path.string();
-        const json j = read_json(path);
+        json j = read_json(path);
+        if (!j.contains("key") || !j.at("key").is_string()) throw DataError(path.string() + ": falta \"key\"");
+        const std::string key = j.at("key").get<std::string>();
+        if (raw.count(key)) throw DataError(path.string() + ": key repetida '" + key + "' (ya está en " + raw.at(key).file + ")");
+        raw.emplace(key, RawEntity{std::move(j), path.string()});
+        order.push_back(key);
+    }
+
+    std::map<std::string, json, std::less<>> resolved;
+    std::function<const json&(const std::string&, std::vector<std::string>&)> resolve =
+        [&](const std::string& key, std::vector<std::string>& chain) -> const json& {
+        if (auto it = resolved.find(key); it != resolved.end()) return it->second;
+        const RawEntity& r = raw.at(key);
+        if (std::find(chain.begin(), chain.end(), key) != chain.end()) {
+            std::string cycle;
+            for (const auto& c : chain) cycle += c + " → ";
+            throw DataError(r.file + ": herencia circular: " + cycle + key);
+        }
+        json result;
+        if (r.body.contains("extends")) {
+            const std::string parent = r.body.at("extends").get<std::string>();
+            if (!raw.count(parent)) throw DataError(r.file + ": extends '" + parent + "' no existe");
+            chain.push_back(key);
+            result = resolve(parent, chain);
+            chain.pop_back();
+            result.erase("abstract");  // ser abstracto no se hereda
+            result.merge_patch(r.body);
+        } else {
+            result = r.body;
+        }
+        result.erase("extends");
+        return resolved.emplace(key, std::move(result)).first->second;
+    };
+
+    std::vector<std::pair<std::vector<std::string>, std::vector<std::string>>> pending_refs;  // trains, builds
+    for (const auto& key : order) {
+        std::vector<std::string> chain;
+        const json& j = resolve(key, chain);
+        if (j.value("abstract", false)) continue;
+        const std::string where = raw.at(key).file;
         try {
             ObjSheet s;
-            s.key = j.at("key").get<std::string>();
-            if (reg.type_by_key_.count(s.key)) throw DataError(where + ": key repetida '" + s.key + "'");
+            s.key = key;
             s.type = TypeId{static_cast<uint16_t>(reg.sheets_.size())};
             s.display_name = j.value("name", s.key);
+            s.description = j.value("description", std::string());
             s.kind = parse_kind(j.at("kind").get<std::string>(), where);
 
             for (const auto& c : j.value("classes", json::array())) {
@@ -126,6 +185,13 @@ DataRegistry DataRegistry::load(const fs::path& data_dir) {
                 auto id = reg.find_class(cname);
                 if (!id) throw DataError(where + ": clase '" + cname + "' no está en classes.json");
                 s.stats.classes.add(*id);
+            }
+            for (const auto& c : j.value("capabilities", json::array())) {
+                const std::string cap = c.get<std::string>();
+                if (cap == "move") s.stats.capabilities.set(static_cast<std::size_t>(Capability::Move));
+                else if (cap == "gather") s.stats.capabilities.set(static_cast<std::size_t>(Capability::Gather));
+                else if (cap == "build") s.stats.capabilities.set(static_cast<std::size_t>(Capability::Build));
+                else throw DataError(where + ": capability desconocida '" + cap + "' (move, gather, build)");
             }
             s.stats.max_hp = j.value("hp", 1);
             s.stats.move_speed = core::Fixed::from_double(j.value("speed", 0.0));
@@ -139,10 +205,29 @@ DataRegistry DataRegistry::load(const fs::path& data_dir) {
                 s.stats.footprint_h = static_cast<uint8_t>(fp.at(1).get<int>());
                 if (s.stats.footprint_w == 0 || s.stats.footprint_h == 0) throw DataError(where + ": footprint debe ser >= 1x1");
             }
+
+            // Tiempos en segundos en el JSON → ticks
+            auto seconds_to_ticks = [](double s) { return static_cast<uint32_t>(std::llround(s * kTicksPerSecondData)); };
+            s.stats.train_ticks = seconds_to_ticks(j.value("train_time", 0.0));
+            s.stats.build_ticks = seconds_to_ticks(j.value("build_time", 0.0));
+            if (j.contains("cost")) s.stats.cost = parse_resources(j.at("cost"), where);
+
+            if (j.contains("gather")) {
+                const json& g = j.at("gather");
+                s.stats.carry_capacity = g.value("carry", 10);
+                for (const auto& [res, rate] : g.at("rates").items()) {
+                    const auto tag = parse_resource(res, where);
+                    s.stats.gather_per_tick[index_of(tag)] = core::Fixed::from_double(rate.get<double>() / kTicksPerSecondData);
+                }
+            }
+            for (const auto& r : j.value("dropoff", json::array())) {
+                s.stats.dropoff.set(index_of(parse_resource(r.get<std::string>(), where)));
+            }
             if (j.contains("resource")) {
                 const auto& r = j.at("resource");
                 s.resource = ResourceNodeDef{parse_resource(r.at("type").get<std::string>(), where), r.at("amount").get<int32_t>()};
             }
+
             const json v = j.value("visual", json::object());
             s.visual.shape = parse_shape(v.value("shape", std::string(s.is_unit() ? "unit" : "building")), where);
             s.visual.size = v.value("size", 0.3f);
@@ -154,11 +239,32 @@ DataRegistry DataRegistry::load(const fs::path& data_dir) {
             s.visual.use_player_color = v.value("player_color", s.visual.use_player_color);
             s.visual.label = v.value("label", s.display_name);
 
+            if (s.stats.has(Capability::Build) && !j.contains("builds")) {
+                throw DataError(where + ": tiene la capability build pero no lista \"builds\"");
+            }
+            pending_refs.emplace_back(j.value("trains", std::vector<std::string>{}), j.value("builds", std::vector<std::string>{}));
             reg.type_by_key_.emplace(s.key, s.type);
             reg.sheets_.push_back(std::move(s));
         } catch (const json::exception& e) {
             throw DataError(where + ": " + e.what());
         }
+    }
+
+    for (std::size_t i = 0; i < reg.sheets_.size(); ++i) {
+        ObjSheet& s = reg.sheets_[i];
+        const std::string& where = raw.at(s.key).file;
+        auto refs = [&](const std::vector<std::string>& keys, EntityKind expected, const char* field) {
+            std::vector<TypeId> out;
+            for (const auto& k : keys) {
+                auto t = reg.find_type(k);
+                if (!t) throw DataError(where + ": " + field + " referencia '" + k + "', que no existe o es abstracta");
+                if (reg.sheets_[t->value].kind != expected) throw DataError(where + ": " + field + " → '" + k + "' no es del tipo esperado");
+                out.push_back(*t);
+            }
+            return out;
+        };
+        s.trains = refs(pending_refs[i].first, EntityKind::Unit, "trains");
+        s.builds = refs(pending_refs[i].second, EntityKind::Building, "builds");
     }
 
     // ─── Partida inicial ─────────────────────────────────────────────────
@@ -174,11 +280,7 @@ DataRegistry DataRegistry::load(const fs::path& data_dir) {
                 return *t;
             };
 
-            const json res = j.value("resources", json::object());
-            reg.start_.resources[index_of(ResourceTag::Food)] = res.value("food", 0);
-            reg.start_.resources[index_of(ResourceTag::Wood)] = res.value("wood", 0);
-            reg.start_.resources[index_of(ResourceTag::Gold)] = res.value("gold", 0);
-            reg.start_.resources[index_of(ResourceTag::Stone)] = res.value("stone", 0);
+            reg.start_.resources = parse_resources(j.value("resources", json::object()), where);
 
             for (const auto& p : j.at("players")) {
                 reg.start_.players.push_back(PlayerDef{p.at("name").get<std::string>(), parse_color(p.at("color").get<std::string>(), where)});

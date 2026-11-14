@@ -1,0 +1,11 @@
+{
+  // Base común de los edificios de depósito: cada uno solo cambia qué recursos acepta.
+  "key": "_camp_base",
+  "extends": "_building_base",
+  "abstract": true,
+  "hp": 600,
+  "footprint": [2, 2],
+  "cost": { "wood": 100 },
+  "build_time": 35,
+  "visual": { "height": 0.8 }
+}

@@ -53,6 +53,16 @@ sf::FloatRect bounds_of(std::initializer_list<sf::Vector2f> pts) {
     return sf::FloatRect({x0, y0}, {x1 - x0, y1 - y0});
 }
 
+sf::Color resource_color(data::ResourceTag r) {
+    switch (r) {
+    case data::ResourceTag::Food: return {214, 70, 110};
+    case data::ResourceTag::Wood: return {150, 98, 50};
+    case data::ResourceTag::Gold: return {236, 196, 64};
+    case data::ResourceTag::Stone: return {170, 170, 170};
+    }
+    return sf::Color::White;
+}
+
 sf::Color owner_color(const sim::GameState& game, const data::VisualDef& v, data::PlayerId owner) {
     if (v.use_player_color && owner != data::kGaia) return rgba(game.player(owner).color);
     return rgba(v.color);
@@ -142,6 +152,16 @@ void EntityRenderer::draw_world(sf::RenderTarget& target, const sim::GameState& 
             head.setPosition(p - sf::Vector2f{0.f, r * 1.25f + 2.f});
             head.setFillColor(sf::Color(236, 206, 170));
             target.draw(head);
+            // Carga que lleva (cuadradito del color del recurso)
+            if (e.carry.amount > core::Fixed{}) {
+                sf::RectangleShape load({r * 0.8f, r * 0.8f});
+                load.setOrigin({r * 0.4f, r * 0.4f});
+                load.setPosition(p + sf::Vector2f{r * 0.9f, -r * 0.9f});
+                load.setFillColor(resource_color(e.carry.resource));
+                load.setOutlineColor(kOutline);
+                load.setOutlineThickness(1.f);
+                target.draw(load);
+            }
             v.hit = sf::FloatRect({p.x - r * 1.3f, p.y - r * 2.4f}, {r * 2.6f, r * 2.8f});
             v.label_y = p.y - r * 2.2f - 4.f;
             break;
@@ -177,12 +197,19 @@ void EntityRenderer::draw_world(sf::RenderTarget& target, const sim::GameState& 
             break;
         }
         case data::ShapeKind::Building: {
+            const sf::Color base_color = color;
             const float ax = static_cast<float>(e.anchor.x);
             const float ay = static_cast<float>(e.anchor.y);
             const float fw = sheet.stats.footprint_w;
             const float fh = sheet.stats.footprint_h;
-            const float hpx = vis.height * kTileH;
+            // En obra: más bajo y translúcido según el progreso
+            float progress = 1.f;
+            if (e.construction) {
+                progress = e.construction->progress.to_float() / static_cast<float>(std::max<uint32_t>(1, e.construction->total_ticks));
+            }
+            const float hpx = vis.height * kTileH * (0.15f + 0.85f * progress);
             const sf::Vector2f up{0.f, -hpx};
+            const sf::Color color = e.construction ? sf::Color(base_color.r, base_color.g, base_color.b, 150) : base_color;
             const sf::Vector2f T = world_to_iso(ax, ay), R = world_to_iso(ax + fw, ay);
             const sf::Vector2f B = world_to_iso(ax + fw, ay + fh), L = world_to_iso(ax, ay + fh);
             // Margen interior para que se vea el suelo alrededor
@@ -297,7 +324,48 @@ void EntityRenderer::draw_world(sf::RenderTarget& target, const sim::GameState& 
             fg.setFillColor(sf::Color(70, 220, 70));
             target.draw(fg);
         }
+
+        // Punto de reunión del edificio seleccionado
+        if (selected && e.rally_point) {
+            const sf::Vector2f flag = world_to_iso(*e.rally_point);
+            const sf::Vertex line[] = {{p, sf::Color(255, 255, 255, 110)}, {flag, sf::Color(255, 255, 255, 110)}};
+            target.draw(line, 2, sf::PrimitiveType::Lines);
+            sf::RectangleShape pole({2.f, 20.f});
+            pole.setOrigin({1.f, 20.f});
+            pole.setPosition(flag);
+            pole.setFillColor(sf::Color(60, 40, 20));
+            target.draw(pole);
+            sf::ConvexShape banner(3);
+            banner.setPoint(0, flag + sf::Vector2f{1.f, -20.f});
+            banner.setPoint(1, flag + sf::Vector2f{14.f, -15.f});
+            banner.setPoint(2, flag + sf::Vector2f{1.f, -10.f});
+            banner.setFillColor(color);
+            target.draw(banner);
+        }
     }
+}
+
+void EntityRenderer::draw_placement(sf::RenderTarget& target, const sim::GameState& game, data::TypeId type, core::TilePos tile,
+                                    bool valid) const {
+    const auto& s = game.data().sheet(type);
+    const float ax = static_cast<float>(tile.x), ay = static_cast<float>(tile.y);
+    const float fw = s.stats.footprint_w, fh = s.stats.footprint_h;
+    const sf::Color fill = valid ? sf::Color(80, 220, 80, 90) : sf::Color(230, 60, 60, 110);
+    const sf::Color edge = valid ? sf::Color(140, 255, 140) : sf::Color(255, 120, 120);
+    auto ghost = quad(world_to_iso(ax, ay), world_to_iso(ax + fw, ay), world_to_iso(ax + fw, ay + fh), world_to_iso(ax, ay + fh), fill);
+    ghost.setOutlineColor(edge);
+    ghost.setOutlineThickness(1.5f);
+    target.draw(ghost);
+    // Silueta del edificio
+    const float hpx = s.visual.height * kTileH;
+    const sf::Vector2f up{0.f, -hpx};
+    const sf::Vector2f c = world_to_iso(ax + fw * 0.5f, ay + fh * 0.5f);
+    auto roof = quad(world_to_iso(ax, ay) + up, world_to_iso(ax + fw, ay) + up, world_to_iso(ax + fw, ay + fh) + up,
+                     world_to_iso(ax, ay + fh) + up, sf::Color(255, 255, 255, 40));
+    roof.setOutlineColor(edge);
+    target.draw(roof);
+    const sf::Vertex mast[] = {{c, edge}, {c + up, edge}};
+    target.draw(mast, 2, sf::PrimitiveType::Lines);
 }
 
 void EntityRenderer::draw_markers(sf::RenderTarget& target, std::span<const MoveMarker> markers) const {
@@ -337,7 +405,14 @@ void EntityRenderer::draw_labels(sf::RenderWindow& window, const sim::GameState&
         }
         if (!show) continue;
 
-        text.setString(labels_[v.type.value]);
+        const sim::SpawnableEntity* ent = game.entity(v.handle);
+        if (ent && ent->construction) {
+            const int pct = static_cast<int>(100.f * ent->construction->progress.to_float() /
+                                             static_cast<float>(std::max<uint32_t>(1, ent->construction->total_ticks)));
+            text.setString(labels_[v.type.value] + utf8(" · en obra " + std::to_string(pct) + "%"));
+        } else {
+            text.setString(labels_[v.type.value]);
+        }
         sf::Color fill = sf::Color(235, 235, 235);
         if (v.owner != data::kGaia) fill = mix(rgba(game.player(v.owner).color), sf::Color::White, 0.55f);
         if (is_hovered || is_selected) fill = sf::Color::White;

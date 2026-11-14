@@ -2,12 +2,14 @@
 
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <vector>
 
 #include "core/rng.hpp"
 #include "core/slot_map.hpp"
 #include "data/data_registry.hpp"
+#include "sim/actions/action.hpp"
 #include "sim/commands/command.hpp"
 #include "sim/entities/spawnable_entity.hpp"
 #include "sim/player/player_state.hpp"
@@ -18,6 +20,8 @@
 namespace sim {
 
 inline constexpr int kTicksPerSecond = 20;
+inline constexpr std::size_t kMaxQueue = 15;
+inline constexpr int32_t kMaxPopulation = 200;
 
 struct GameConfig {
     uint32_t seed = 1;
@@ -30,6 +34,7 @@ struct SpawnRequest {
     data::TypeId type;
     data::PlayerId owner = data::kGaia;
     core::TilePos tile;  // unidades: tile deseado; edificios/recursos: esquina del footprint
+    bool as_construction_site = false;
 };
 
 class GameState {
@@ -41,6 +46,7 @@ public:
     // Avanza un tick fijo aplicando los comandos de ese tick.
     void step(std::span<const Command> commands);
 
+    // ─── Consultas (render, UI, IA, tests) ───────────────────────────────
     uint32_t tick() const { return tick_; }
     const GameConfig& config() const { return config_; }
     const data::DataRegistry& data() const { return data_; }
@@ -51,9 +57,27 @@ public:
     const PlayerState& player(data::PlayerId id) const { return players_.at(id); }
     int num_players() const { return config_.num_players; }
     core::Vec2F start_position(data::PlayerId id) const { return start_positions_.at(id); }
+    const data::ObjSheet& sheet_of(const SpawnableEntity& e) const { return data_.sheet(e.type); }
+
+    bool can_afford(data::PlayerId p, const data::ResourceArray& cost) const;
+    bool can_place(data::TypeId building, core::TilePos tile) const;
 
     // Hash del estado: dos simulaciones con la misma seed y comandos deben coincidir.
     uint64_t state_hash() const;
+
+    // ─── API interna para las acciones (sim/actions) ─────────────────────
+    SpawnableEntity* entity_mut(core::EntityHandle h) { return entities_.get(h); }
+    PlayerState& player_mut(data::PlayerId id) { return players_.at(id); }
+    std::optional<MovePlan> plan_path(const SpawnableEntity& e, core::Vec2F target);
+    // Camino hasta quedar junto al footprint de `target`. Plan vacío si ya está al lado.
+    std::optional<MovePlan> plan_path_to(const SpawnableEntity& e, const SpawnableEntity& target);
+    StepResult step_along(SpawnableEntity& e, MovePlan& plan);
+    bool in_reach(const SpawnableEntity& e, const SpawnableEntity& target) const;
+    core::EntityHandle nearest_dropoff(data::PlayerId p, data::ResourceTag r, core::Vec2F from) const;
+    core::EntityHandle nearest_resource(data::ResourceTag r, core::Vec2F from, int max_tiles) const;
+    // Devuelve true si la obra queda terminada con esta aportación.
+    bool contribute_build(SpawnableEntity& site);
+    void request_despawn(core::EntityHandle h) { pending_despawns_.push_back(h); }
 
 private:
     // ─── Montaje de la partida (map_generation.cpp) ──────────────────────
@@ -71,11 +95,14 @@ private:
     core::EntityHandle spawn_now(const SpawnRequest& req);
     void despawn_now(core::EntityHandle h);
     void apply_pending();
+    void displace_units_from(core::TilePos anchor, int w, int h);
 
-    // ─── Sistemas ────────────────────────────────────────────────────────
+    // ─── Comandos y sistemas ─────────────────────────────────────────────
     void apply_command(const Command& cmd);
-    void order_move(SpawnableEntity& e, core::Vec2F target);
-    void movement_system();
+    void command_move(const std::vector<core::EntityHandle>& actors, core::Vec2F target);
+    void command_place_building(const Command& cmd, const std::vector<core::EntityHandle>& actors);
+    void production_system();
+    void action_system();
 
     const data::DataRegistry& data_;
     GameConfig config_;
@@ -91,6 +118,7 @@ private:
 
     std::vector<SpawnRequest> pending_spawns_;
     std::vector<core::EntityHandle> pending_despawns_;
+    std::vector<core::EntityHandle> query_;  // buffer reutilizable
 };
 
 }  // namespace sim

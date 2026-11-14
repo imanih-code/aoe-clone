@@ -1,0 +1,12 @@
+{
+  // Plantilla abstracta: no aparece en el juego, solo sirve de base con "extends".
+  "key": "_unit_base",
+  "abstract": true,
+  "kind": "unit",
+  "classes": ["unit"],
+  "capabilities": ["move"],
+  "radius": 0.2,
+  "sight": 4,
+  "population": 1,
+  "visual": { "shape": "unit", "size": 0.22 }
+}

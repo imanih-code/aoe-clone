@@ -2,12 +2,16 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <deque>
+#include <limits>
+#include <memory>
 #include <optional>
 #include <vector>
 
 #include "core/entity_handle.hpp"
 #include "core/fixed.hpp"
 #include "data/ids.hpp"
+#include "sim/actions/action.hpp"
 
 namespace sim {
 
@@ -17,14 +21,24 @@ struct ResourceNodeData {
     int32_t amount_max = 0;
 };
 
-// Orden de movimiento en curso. En la Fase 3 se generaliza a IActionBehavior
-// (mutability.md); de momento mover es la única acción.
-struct MoveOrder {
-    std::vector<core::Vec2F> waypoints;  // el último es el destino exacto
-    std::size_t next = 0;
+// Lo que lleva encima un recolector
+struct CarryState {
+    data::ResourceTag resource = data::ResourceTag::Food;
+    core::Fixed amount;
+};
 
-    bool done() const { return next >= waypoints.size(); }
-    core::Vec2F current() const { return waypoints[next]; }
+// Edificio en obra
+struct ConstructionData {
+    core::Fixed progress;  // en ticks de trabajo de un constructor
+    uint32_t total_ticks = 1;
+    uint32_t last_tick = std::numeric_limits<uint32_t>::max();  // para el rendimiento decreciente
+};
+
+struct ProductionJob {
+    data::TypeId type;
+    uint32_t ticks_remaining = 0;
+    uint32_t ticks_total = 0;
+    data::ResourceArray paid{};  // se devuelve si se cancela
 };
 
 struct SpawnableEntity {
@@ -40,10 +54,18 @@ struct SpawnableEntity {
     core::TilePos anchor;       // esquina del footprint (edificios y recursos)
     int32_t hp = 1;
 
+    // ─── Componentes opcionales (architecture.md, Diagrama 5) ────────────
     std::optional<ResourceNodeData> resource_node;
-    std::optional<MoveOrder> move;
+    std::optional<ConstructionData> construction;  // con valor = en obra
+    CarryState carry;
+    std::deque<ProductionJob> production;
+    std::optional<core::Vec2F> rally_point;
+
+    // ─── Acción en curso ─────────────────────────────────────────────────
+    std::unique_ptr<IAction> action;
 
     bool is_converted() const { return original_player != current_player; }
+    bool is_complete() const { return !construction.has_value(); }
 };
 
 }  // namespace sim

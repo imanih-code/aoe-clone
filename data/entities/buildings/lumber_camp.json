@@ -1,0 +1,8 @@
+{
+  "key": "lumber_camp",
+  "extends": "_camp_base",
+  "name": "Aserradero",
+  "description": "Depósito de madera.",
+  "dropoff": ["wood"],
+  "visual": { "label": "Aserradero" }
+}

@@ -1,0 +1,12 @@
+{
+  "key": "barracks",
+  "extends": "_building_base",
+  "name": "Cuartel",
+  "description": "Entrena infantería.",
+  "hp": 1200,
+  "footprint": [3, 3],
+  "trains": ["militia"],
+  "cost": { "wood": 175 },
+  "build_time": 50,
+  "visual": { "height": 1.1, "label": "Cuartel" }
+}

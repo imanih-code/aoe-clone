@@ -1,11 +1,15 @@
 {
   "key": "town_center",
+  "extends": "_building_base",
   "name": "Plaza mayor",
-  "kind": "building",
-  "classes": ["building"],
+  "description": "Entrena aldeanos y acepta todos los recursos.",
   "hp": 2400,
   "footprint": [4, 4],
   "sight": 8,
   "population_provided": 5,
-  "visual": { "shape": "building", "height": 1.6, "label": "Plaza mayor" }
+  "dropoff": ["food", "wood", "gold", "stone"],
+  "trains": ["villager"],
+  "cost": { "wood": 275, "stone": 100 },
+  "build_time": 150,
+  "visual": { "height": 1.6, "label": "Plaza mayor" }
 }

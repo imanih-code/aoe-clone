@@ -39,19 +39,20 @@ int GameApp::run() {
     int frame = 0;
 
     while (window_.isOpen()) {
+        panel_.rebuild(*game_, input_.local_player(), input_.selection(), window_.getSize());
         while (const std::optional event = window_.pollEvent()) {
             if (event->is<sf::Event::Closed>()) {
                 window_.close();
                 break;
             }
             if (const auto* resized = event->getIf<sf::Event::Resized>()) camera_.on_resize(resized->size);
-            input_.handle_event(*event, window_, camera_, *game_, entity_renderer_, view_options_);
+            input_.handle_event(*event, window_, camera_, *game_, entity_renderer_, panel_, view_options_);
         }
         if (!window_.isOpen()) break;
 
         const float dt = std::min(clock.restart().asSeconds(), 0.25f);  // evita la espiral de la muerte
         camera_.update(dt, window_);
-        input_.update(dt, *game_);
+        input_.update(dt, *game_, window_, camera_);
 
         // Simulación a tick fijo; el render interpola con alpha (architecture.md §9.1)
         accumulator += dt;
@@ -69,13 +70,7 @@ int GameApp::run() {
             fps_frames = 0;
         }
 
-        // Modo demo: seleccionar las unidades propias y mandarlas a moverse
-        if (options_.demo && frame == 5) {
-            const auto& me = game_->player(input_.local_player());
-            input_.select(me.units);
-            const core::Vec2F s = game_->start_position(input_.local_player());
-            input_.order_move_world({s.x + core::Fixed::from_int(6), s.y + core::Fixed::from_int(4)}, *game_);
-        }
+        if (options_.demo && frame == 5) start_demo();
 
         draw_frame(accumulator / kStep, fps);
         ++frame;
@@ -94,6 +89,64 @@ int GameApp::run() {
     return 0;
 }
 
+// Modo demo: dos aldeanos a las bayas, uno construye una casa, el explorador sale
+// a explorar y la plaza mayor entrena dos aldeanos. Sirve para probar la Fase 3 sin ratón.
+void GameApp::start_demo() {
+    const data::PlayerId me_id = input_.local_player();
+    const auto& me = game_->player(me_id);
+    const core::Vec2F start = game_->start_position(me_id);
+    std::vector<core::EntityHandle> villagers, others;
+    for (auto h : me.units) {
+        const auto* e = game_->entity(h);
+        (game_->sheet_of(*e).stats.has(data::Capability::Gather) ? villagers : others).push_back(h);
+    }
+    auto command = [&](sim::CommandType type, std::vector<core::EntityHandle> actors) {
+        sim::Command c;
+        c.issuer = me_id;
+        c.type = type;
+        c.actors = std::move(actors);
+        return c;
+    };
+
+    if (villagers.size() >= 2) {
+        const auto berry = game_->nearest_resource(data::ResourceTag::Food, start, 16);
+        if (berry) {
+            auto c = command(sim::CommandType::Gather, {villagers[0], villagers[1]});
+            c.target = berry;
+            input_.submit(std::move(c));
+        }
+    }
+    if (villagers.size() >= 3) {
+        const data::TypeId house = data_.type("house");
+        const core::TilePos s = core::tile_of(start);
+        for (int r = 4; r < 10; ++r) {
+            const core::TilePos t{s.x - r, s.y + 1};
+            if (game_->can_place(house, t)) {
+                auto c = command(sim::CommandType::PlaceBuilding, {villagers[2]});
+                c.type_arg = house;
+                c.tile = t;
+                input_.submit(std::move(c));
+                break;
+            }
+        }
+    }
+    if (!others.empty()) {
+        auto c = command(sim::CommandType::Move, others);
+        c.target_pos = {start.x + core::Fixed::from_int(12), start.y - core::Fixed::from_int(8)};
+        input_.submit(std::move(c));
+    }
+    if (!me.buildings.empty()) {
+        for (int i = 0; i < 2; ++i) {
+            auto c = command(sim::CommandType::Train, {me.buildings.front()});
+            c.type_arg = data_.type("villager");
+            input_.submit(std::move(c));
+        }
+    }
+    // Seleccionar los aldeanos y dejar un aserradero "en la mano" para ver el panel y la vista previa
+    input_.select(villagers);
+    input_.begin_placement(data_.type("lumber_camp"));
+}
+
 void GameApp::draw_frame(float alpha, float fps) {
     window_.clear(sf::Color(18, 22, 28));
 
@@ -102,6 +155,9 @@ void GameApp::draw_frame(float alpha, float fps) {
     map_renderer_.draw(window_, camera_.visible_rect(), view_options_.grid);
     entity_renderer_.draw_world(window_, *game_, camera_, alpha, input_.selection());
     entity_renderer_.draw_markers(window_, input_.markers());
+    if (const auto& placing = input_.placement()) {
+        entity_renderer_.draw_placement(window_, *game_, placing->type, placing->tile, placing->valid);
+    }
 
     const sf::Vector2i mouse = sf::Mouse::getPosition(window_);
     const sf::Vector2f mouse_iso = window_.mapPixelToCoords(mouse, camera_.view());
@@ -121,6 +177,7 @@ void GameApp::draw_frame(float alpha, float fps) {
     info.fps = fps;
     info.drag_rect = input_.drag_rect();
     hud_.draw(window_, *game_, info, view_options_);
+    panel_.draw(window_, font_, sf::Vector2f(mouse));
 
     window_.display();
 }

@@ -60,7 +60,17 @@ void Hud::draw(sf::RenderWindow& window, const sim::GameState& game, const HudIn
         const auto b = put(std::string(resource_name(tag)) + "  " + std::to_string(me.resources[r]), {x, 5.f});
         x = b.position.x + b.size.x + 28.f;
     }
-    put("Población  " + std::to_string(me.population_current) + "/" + std::to_string(me.population_cap), {x, 5.f});
+    const bool housed = me.population_current >= me.population_cap;
+    const auto pb = put("Población  " + std::to_string(me.population_current) + "/" + std::to_string(me.population_cap), {x, 5.f}, 15,
+                        housed ? sf::Color(255, 140, 120) : sf::Color(240, 236, 220));
+    x = pb.position.x + pb.size.x + 28.f;
+
+    int idle = 0;
+    for (core::EntityHandle h : me.units) {
+        const sim::SpawnableEntity* e = game.entity(h);
+        if (e && !e->action && game.sheet_of(*e).stats.has(data::Capability::Gather)) ++idle;
+    }
+    if (idle > 0) put("Aldeanos ociosos  " + std::to_string(idle) + "  (.)", {x, 5.f}, 15, sf::Color(250, 210, 120));
 
     const std::string right = me.name + "   ·   tick " + std::to_string(game.tick()) + "   ·   " + std::to_string(static_cast<int>(info.fps)) + " FPS";
     text.setString(utf8(right));
@@ -71,12 +81,15 @@ void Hud::draw(sf::RenderWindow& window, const sim::GameState& game, const HudIn
     if (options.help) {
         const char* lines[] = {
             "Clic izq.: seleccionar   ·   arrastrar: selección por caja   ·   Shift: añadir",
-            "Doble clic: todas las del mismo tipo en pantalla",
-            "Clic der.: mover   ·   S: detener   ·   Espacio: centrar en la selección",
-            "Flechas / bordes / botón central: mover cámara   ·   Rueda: zoom",
-            "L: etiquetas   ·   G: cuadrícula   ·   H: ocultar esta ayuda   ·   Esc: deseleccionar",
+            "Doble clic: todas las del mismo tipo en pantalla   ·   .: siguiente aldeano ocioso",
+            "Clic der.: mover · recolectar (sobre un recurso) · construir (sobre una obra)",
+            "Clic der. con un edificio seleccionado: punto de reunión",
+            "Panel de órdenes: clic o tecla Q W E R T / A S D F G / Z X C V B",
+            "Colocar edificio: clic izq. (Shift = varios)   ·   clic der. o Esc: cancelar",
+            "Flechas / bordes / botón central: cámara   ·   Rueda: zoom   ·   Espacio: centrar",
+            "L: etiquetas   ·   F2: cuadrícula   ·   H: ocultar esta ayuda   ·   Esc: deseleccionar",
         };
-        sf::RectangleShape bg({560.f, 108.f});
+        sf::RectangleShape bg({600.f, 165.f});
         bg.setPosition({10.f, 38.f});
         bg.setFillColor(sf::Color(0, 0, 0, 140));
         window.draw(bg);
@@ -89,7 +102,7 @@ void Hud::draw(sf::RenderWindow& window, const sim::GameState& game, const HudIn
 
     // ─── Panel de selección ──────────────────────────────────────────────
     if (!info.selection.empty()) {
-        sf::RectangleShape panel({380.f, 104.f});
+        sf::RectangleShape panel({420.f, 104.f});
         panel.setPosition({10.f, size.y - 114.f});
         panel.setFillColor(sf::Color(28, 22, 16, 225));
         panel.setOutlineColor(sf::Color(120, 100, 60));
@@ -101,16 +114,39 @@ void Hud::draw(sf::RenderWindow& window, const sim::GameState& game, const HudIn
             if (const sim::SpawnableEntity* e = game.entity(info.selection.front())) {
                 const auto& sheet = game.data().sheet(e->type);
                 put(sheet.display_name, o, 18, sf::Color::White);
-                put("Dueño: " + game.player(e->current_player).name, o + sf::Vector2f{0.f, 28.f}, 14);
-                if (sheet.stats.max_hp > 1) {
-                    put("Vida: " + std::to_string(e->hp) + " / " + std::to_string(sheet.stats.max_hp), o + sf::Vector2f{0.f, 48.f}, 14);
-                }
+                put("Dueño: " + game.player(e->current_player).name, o + sf::Vector2f{0.f, 26.f}, 14);
+                // Dos líneas de estado según lo que sea la entidad
+                std::string line1, line2;
+                if (sheet.stats.max_hp > 1) line1 = "Vida: " + std::to_string(e->hp) + " / " + std::to_string(sheet.stats.max_hp);
                 if (e->resource_node) {
-                    put(std::string(resource_name(e->resource_node->resource)) + ": " + std::to_string(e->resource_node->amount_remaining),
-                        o + sf::Vector2f{0.f, 48.f}, 14);
+                    line1 = std::string(resource_name(e->resource_node->resource)) + ": " + std::to_string(e->resource_node->amount_remaining);
                 }
-                const core::TilePos t = core::tile_of(e->position);
-                put("Casilla: " + std::to_string(t.x) + ", " + std::to_string(t.y), o + sf::Vector2f{0.f, 68.f}, 14);
+                if (sheet.is_unit()) {
+                    line2 = e->action ? e->action->label() : "Inactivo";
+                    if (e->carry.amount > core::Fixed{}) {
+                        line2 += "   ·   lleva " + std::to_string(e->carry.amount.floor_int()) + " " + resource_name(e->carry.resource);
+                    }
+                } else if (e->construction) {
+                    const int pct = static_cast<int>(100.f * e->construction->progress.to_float() /
+                                                     static_cast<float>(std::max<uint32_t>(1, e->construction->total_ticks)));
+                    line2 = "En obra: " + std::to_string(pct) + "%  (clic der. con aldeanos para ayudar)";
+                } else if (!e->production.empty()) {
+                    const auto& job = e->production.front();
+                    const sim::PlayerState& owner = game.player(e->current_player);
+                    const bool blocked = job.ticks_remaining == 0 &&
+                                         owner.population_current + game.data().sheet(job.type).stats.population_cost > owner.population_cap;
+                    line2 = "Entrenando " + game.data().sheet(job.type).display_name +
+                            (blocked ? "  ·  falta población: construye casas"
+                                     : "  ·  " + std::to_string((job.ticks_remaining + sim::kTicksPerSecond - 1) / sim::kTicksPerSecond) + " s");
+                    if (e->production.size() > 1) line2 += "  (+" + std::to_string(e->production.size() - 1) + " en cola)";
+                } else if (sheet.stats.dropoff.any()) {
+                    line2 = "Depósito de";
+                    for (std::size_t r = 0; r < data::kResourceCount; ++r) {
+                        if (sheet.stats.dropoff.test(r)) line2 += std::string(" ") + resource_name(static_cast<data::ResourceTag>(r));
+                    }
+                }
+                if (!line1.empty()) put(line1, o + sf::Vector2f{0.f, 46.f}, 14);
+                if (!line2.empty()) put(line2, o + sf::Vector2f{0.f, 66.f}, 14, sf::Color(250, 220, 150));
             }
         } else {
             std::map<std::string, int> counts;

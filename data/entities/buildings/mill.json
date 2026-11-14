@@ -1,0 +1,8 @@
+{
+  "key": "mill",
+  "extends": "_camp_base",
+  "name": "Molino",
+  "description": "Depósito de comida.",
+  "dropoff": ["food"],
+  "visual": { "label": "Molino" }
+}

@@ -1426,3 +1426,28 @@ Jugador controlado por la IA = un módulo que **lee** el estado (respetando su n
 
 ### 11.7 Contenido
 El motor y los datos van separados a propósito: las mecánicas del género (aldeanos, edades, recolección, conversión, guarnición) son terreno común, pero **nombres de civilizaciones, unidades únicas, tecnologías, arte, sonido y mapas** deben ser propios o tener una licencia que permita usarlos. Los ejemplos de este documento ("Jinete de Jade", "Filo de Obsidiana", civ A/B) son marcadores de posición.
+
+### 11.8 Herencia de datos y líneas de mejora
+
+Son dos mecanismos distintos que se suelen confundir:
+
+| | Herencia de fichas (`extends`) | Línea de mejora (`upgrades`) |
+|---|---|---|
+| Cuándo actúa | Al **cargar** los datos | **Durante** la partida, al investigar |
+| Qué hace | Una ficha copia otra y sobrescribe campos | Las unidades de tipo X de un jugador pasan a ser de tipo Y |
+| Ejemplo | `lumber_camp` extiende `_camp_base` y solo cambia `dropoff` y la etiqueta | "Infantería pesada" convierte toda la milicia del jugador en infantería pesada |
+| Coste en ejecución | Ninguno: el registro ya contiene la ficha resuelta | Recorrer las unidades de ese jugador una vez |
+
+**Herencia (`extends`)**
+- Cualquier fichero de `data/entities` puede declarar `"extends": "<key>"`. El cargador resuelve la cadena (detectando ciclos) y fusiona los objetos con *JSON merge patch*: los objetos se mezclan campo a campo, los arrays y los valores simples del hijo sustituyen a los del padre y `null` borra un campo.
+- Las plantillas con `"abstract": true` sirven solo como base: no generan `TypeId` ni aparecen en el juego. Por convención su `key` empieza por `_`.
+- Las civilizaciones (Fase 4) usan el mismo mecanismo para sus unidades únicas: `"extends": "knight"` y cambiar lo necesario.
+
+**Líneas de mejora (`upgrades`)**
+- Una `TechTemplate` puede incluir `upgrades: [{ from: "militia", to: "man_at_arms" }]`.
+- Al completarse: cada entidad del jugador con `type_id == from` cambia a `to` conservando el % de vida; la receta de `from` en los edificios del jugador se sustituye por la de `to`; los modificadores que apuntaban a `from` siguen aplicándose a `to` si el modificador apunta por clase.
+- La línea completa se ve en los datos (`from → to`), no en el código.
+
+### 11.9 Capabilities en la Fase 3
+
+Hasta la Fase 6 las capabilities son un conjunto **fijo por ficha** (`"capabilities": ["move", "gather", "build"]`) y cada una tiene su `IActionBehavior`. El panel de órdenes se genera a partir de ellas y de las listas de la ficha (`builds`, `trains`), así que una unidad nueva con `"capabilities": ["move", "build"]` y `"builds": ["house"]` aparece en el juego con su botón de construir sin tocar código. La Fase 6 solo añade que esas capabilities cambien en partida (`ObjectModifier`).

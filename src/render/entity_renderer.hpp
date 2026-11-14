@@ -49,6 +49,9 @@ public:
     void draw_world(sf::RenderTarget& target, const sim::GameState& game, const Camera& camera, float alpha,
                     std::span<const core::EntityHandle> selection);
     void draw_markers(sf::RenderTarget& target, std::span<const MoveMarker> markers) const;
+    // Vista previa del edificio a colocar (verde = se puede, rojo = no)
+    void draw_placement(sf::RenderTarget& target, const sim::GameState& game, data::TypeId type, core::TilePos tile,
+                        bool valid) const;
     // Etiquetas en coordenadas de pantalla: tamaño constante con cualquier zoom.
     void draw_labels(sf::RenderWindow& window, const sim::GameState& game, const Camera& camera,
                      const ViewOptions& options, std::optional<core::EntityHandle> hovered,

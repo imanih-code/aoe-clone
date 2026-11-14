@@ -13,6 +13,7 @@
 #include "render/hud.hpp"
 #include "render/map_renderer.hpp"
 #include "sim/game/game_state.hpp"
+#include "ui/command_panel.hpp"
 
 namespace app {
 
@@ -31,6 +32,7 @@ public:
 
 private:
     void draw_frame(float alpha, float fps);
+    void start_demo();
 
     AppOptions options_;
     data::DataRegistry data_;
@@ -43,6 +45,7 @@ private:
     render::Hud hud_;
     render::ViewOptions view_options_;
     input::InputController input_;
+    ui::CommandPanel panel_;
 };
 
 }  // namespace app

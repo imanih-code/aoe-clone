@@ -41,20 +41,28 @@ Principio: **vertical slice primero**. Un aldeano que corta madera de punta a pu
 
 ## Fase 3 — Economía
 
-- Recursos naturales (`resource_node`), `GATHER` con ciclo ir → recolectar → depositar.
+- **Herencia de fichas** (`"extends"` en JSON, `architecture.md` §11.8): plantillas abstractas (`_unit_base`, `_camp_base`) que las fichas concretas extienden y sobrescriben.
+- **Capabilities fijas por ficha** (`move`, `gather`, `build`): lo que una unidad puede hacer sale de sus datos. En la Fase 6 pasan a ser dinámicas.
+- `IActionBehavior` sustituye a `MoveOrder`: `MoveAction`, `GatherAction`, `BuildAction`. Las unidades replanifican si un edificio nuevo les corta el camino.
+- Recursos naturales (`resource_node`), `GATHER` con ciclo ir → recolectar → depositar en el edificio de depósito más cercano; si el recurso se agota, buscar otro del mismo tipo.
 - `ResourcePool`, HUD de recursos y población.
-- Producción en edificios (cola, rally point), población y casas.
-- Colocación de edificios (footprint, validación, obra en construcción, varios constructores).
+- Producción en edificios (cola, cancelar con devolución, rally point), población y casas.
+- Colocación de edificios (footprint, validación, obra en construcción, varios constructores con rendimiento decreciente).
+- **Controles**: panel de órdenes generado a partir de la selección (lo que construye un aldeano, lo que entrena un edificio), atajos en cuadrícula (Q W E R T / A S D F G / Z X C V B), clic derecho contextual (mover, recolectar, construir, punto de reunión), `.` para el siguiente aldeano ocioso.
 
 **Hecho cuando**: partida en solitario donde se pueden crear aldeanos, recolectar los cuatro recursos, construir casas y un cuartel y entrenar una unidad militar.
+
+> **Estado (2026-11-14)**: hecha. Herencia `extends` con plantillas abstractas (`_unit_base`, `_building_base`, `_camp_base`), capabilities por ficha, `MoveAction` / `GatherAction` / `BuildAction`, depósitos (aserradero, campamento minero, molino), casas, cuartel con miliciano, cola con cancelación, punto de reunión, panel de órdenes con atajos, clic derecho contextual, aldeanos ociosos. 18 tests (incluido determinismo con economía). Pendiente para la Fase 4: que el miliciano sirva para algo (combate).
 
 ## Fase 4 — Combate y modificadores
 
 - Modelo de daño por clase de armadura (`architecture.md` §4.5), daño acumulado por tick, muertes diferidas.
 - `ATTACK` cuerpo a cuerpo y a distancia (proyectiles como entidades), auto-ataque de unidades ociosas, torres.
 - `ModifierResolver` + `PlayerState::apply_modifier`, tecnologías en edificios, subir de edad como tecnología.
+- **Civilizaciones** (`data/civs/*.json`, `CivilizationTemplate`): qué fichas y tecnologías tiene cada una, sus bonus (`civ_modifiers`), su unidad única y su bonus de equipo. Elegir civ por jugador en `GameConfig`.
+- **Líneas de mejora** (`architecture.md` §11.8): una tecnología con `upgrades: { from, to }` cambia el `TypeId` de las unidades existentes y de las recetas del jugador (p. ej. milicia → infantería pesada).
 
-**Hecho cuando**: dos ejércitos pelean con resultados que cuadran con una hoja de cálculo de daño, y una tecnología de ataque cambia el resultado de forma reproducible (test con semilla fija).
+**Hecho cuando**: dos ejércitos pelean con resultados que cuadran con una hoja de cálculo de daño, una tecnología de ataque cambia el resultado de forma reproducible (test con semilla fija), y dos civilizaciones distintas producen stats distintos para la misma unidad.
 
 ## Fase 5 — Niebla, IA y victoria
 

@@ -1,12 +1,14 @@
 {
   "key": "scout",
+  "extends": "_unit_base",
   "name": "Explorador a caballo",
-  "kind": "unit",
+  "description": "Rápido y con mucha visión. Ideal para explorar.",
   "classes": ["unit", "military", "cavalry"],
   "hp": 45,
   "speed": 1.55,
   "radius": 0.3,
   "sight": 6,
-  "population": 1,
+  "cost": { "food": 80 },
+  "train_time": 30,
   "visual": { "shape": "cavalry", "size": 0.3, "label": "Explorador" }
 }
